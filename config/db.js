@@ -21,7 +21,7 @@ export const connectDB = async () => {
     console.log("DB connected successfully");
 
     // ✅ Auto create / update tables
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: true }); // 👈 ADD THIS
     console.log("All models synchronized");
   } catch (error) {
     console.error("DB error:", error);
