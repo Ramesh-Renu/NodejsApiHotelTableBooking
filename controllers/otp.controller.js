@@ -4,18 +4,32 @@ import RefreshToken from "../models/refreshToken.model.js";
 import { sendOtpSms } from "../services/sms.service.js";
 
 export const verifyOtp = async (req, res) => {
-  const { mobilenumber } = req.body;
+  const { mobilenumber, otp } = req.body;
 
+  if (!mobilenumber || !otp) {
+    return res.status(400).json({
+      success: false,
+      message: "Mobile number and OTP are required",
+    });
+  }
   // 🔍 Check user
   let user = await RegisterUsersData.findOne({
     where: { mobilenumber },
   });
-
-  // 👤 Create user if not exists
   if (!user) {
-    user = await RegisterUsersData.create({
-      mobilenumber,
-      role: "user",
+    return res.status(400).json({
+      success: false,
+      message: "Mobile number Invalid or not registered",
+    });
+  }
+
+  // 👤 if not exists otp
+  const checkotp = process.env.DEV_STATIC_OTP;
+  if (otp !== checkotp) {
+    return res.status(400).json({
+      success: false,
+      message: "OTP is Invalid",
+      otp: checkotp, // ⚠️ remove in production
     });
   }
 
@@ -46,10 +60,13 @@ export const verifyOtp = async (req, res) => {
   });
 
   res.json({
-    message: "Login successful",
-    role: user.role,
-    accessToken,
-    refreshToken,
+    data: {
+      success: true,
+      message: "Login successful",
+      role: user.role,
+      accessToken,
+      refreshToken,
+    },
   });
 };
 

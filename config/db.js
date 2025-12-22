@@ -19,7 +19,6 @@ export const connectDB = async () => {
   try {
     await sequelize.authenticate();
     console.log("DB connected successfully");
-
     // ✅ Auto create / update tables
     await sequelize.sync({ alter: true }); // 👈 ADD THIS
     console.log("All models synchronized");

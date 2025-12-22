@@ -10,6 +10,14 @@ import userRoutes from "./routes/user.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import { connectDB } from "./config/db.js";
+import hotelTableRoutes from "./routes/hotelTable.routes.js";
+import floorRoutes from "./routes/floor.routes.js";
+import tableRoutes from "./routes/table.routes.js";
+import seatRoutes from "./routes/seat.routes.js";
+import reservationRoutes from "./routes/reservation.routes.js";
+import areaRoutes from "./routes/area.routes.js";
+import locationRoutes from "./routes/location.routes.js";
+import "./models/index.js";
 
 connectDB(); // 👈 MUST BE HERE
 dotenv.config();
@@ -26,6 +34,13 @@ app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/hotel", hotelTableRoutes);
+app.use("/api/floors", floorRoutes);
+app.use("/api/tables", tableRoutes);
+app.use("/api/seats", seatRoutes);
+app.use("/api/reservations", reservationRoutes);
+app.use("/api/areas", areaRoutes);
+app.use("/api/locations", locationRoutes);
 
 /* Swagger */
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
