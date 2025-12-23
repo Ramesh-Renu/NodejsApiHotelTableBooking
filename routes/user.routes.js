@@ -57,11 +57,19 @@ router.post("/register", registerUser);
 router.get("/profile", authenticate, async (req, res) => {
   try {
     // 🔑 From JWT
-    const { id, mobilenumber } = req.user;
+    const { id, mobilenumber, mobile } = req.user || {};
+
+    // Build a safe `where` clause: prefer `id`, fallback to `mobilenumber`, then `mobile`
+    if (!id && !mobilenumber && !mobile) {
+      console.error("Profile error: token missing id/mobilenumber/mobile", req.user);
+      return res.status(400).json({ message: "Invalid token: missing user identifier" });
+    }
+
+    const where = id ? { id } : mobilenumber ? { mobilenumber } : { mobilenumber: mobile };
 
     // 🔍 Fetch full user from DB
     const user = await RegisterUsersData.findOne({
-      where: { id }, // or { mobilenumber }
+      where,
       attributes: {
         exclude: ["createdAt", "updatedAt"], // optional
       },

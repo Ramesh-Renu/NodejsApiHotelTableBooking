@@ -46,14 +46,27 @@ router.post("/refresh", async (req, res) => {
       return res.status(403).json({ message: "Invalid refresh token" });
     }
 
+    // Preserve user identity in the new access token (use same claims as refresh token)
     const newAccessToken = jwt.sign(
-      { mobile: decoded.mobile },
+      {
+        id: decoded.id,
+        mobilenumber: decoded.mobilenumber,
+        role: decoded.role,
+      },
       process.env.JWT_ACCESS_SECRET,
       { expiresIn: "15m" }
     );
 
-    res.json({ accessToken: newAccessToken });
+    // Return both access and refresh tokens so frontend can update both values
+    res.json({ accessToken: newAccessToken, refreshToken });
   } catch (err) {
+    // Distinguish expired tokens from other JWT errors for clearer debugging
+    if (err && err.name === "TokenExpiredError") {
+      console.error("Refresh token expired:", err);
+      return res.status(403).json({ message: "Refresh token expired" });
+    }
+
+    console.error("Refresh token error:", err);
     res.status(403).json({ message: "Refresh token expired or invalid" });
   }
 });

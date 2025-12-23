@@ -41,22 +41,22 @@ const router = express.Router();
  *             properties:
  *               hotel_name:
  *                 type: string
- *                 example: "Grand Palace"
- *               location:
+ *                 example: "string"
+ *               location_id:
+ *                 type: integer
+ *                 example: 1
+ *               address:
  *                 type: string
- *                 example: "Chennai"
- *               building:
- *                 type: string
- *                 example: "Block A"
+ *                 example: "string"
  *               floor:
  *                 type: integer
- *                 example: 2
+ *                 example: 1
  *               tables_per_floor:
  *                 type: integer
- *                 example: 10
+ *                 example: 1
  *               chairs_per_table:
  *                 type: integer
- *                 example: 4
+ *                 example: 2
  *               area_id:
  *                 type: integer
  *                 example: 1
@@ -74,8 +74,9 @@ router.post(
   authenticate,
   [
     body("hotel_name").notEmpty(),
+    body("location_id").isInt({ min: 1 }).withMessage("location_id is required and must be a positive integer"),
     body("area_id").isInt({ min: 1 }).withMessage("area_id is required and must be a positive integer"),
-    body("floor").isInt({ min: 0 }),
+    body("floor").isInt({ min: 1 }),
     body("tables_per_floor").isInt({ min: 1 }),
     body("chairs_per_table").isInt({ min: 1 }),
   ],
@@ -144,10 +145,11 @@ router.get("/:id", authenticate, getHotelTableById); // READ ONE
  *               hotel_name:
  *                 type: string
  *                 example: "Grand Palace Updated"
- *               location:
- *                 type: string
- *                 example: "Bangalore"
- *               building:
+ *               location_id:
+ *                 type: integer
+ *                 example: 1
+ *               area_id:
+ *               address:
  *                 type: string
  *                 example: "Block B"
  *               floor:

@@ -13,12 +13,13 @@ const HotelTable = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    location: {
-      type: DataTypes.STRING,
+    location_id: {
+      type: DataTypes.INTEGER,
       allowNull: false,
     },
-    building: {
+    address: {
       type: DataTypes.STRING,
+      field: "address",
     },
     area_id: {
       type: DataTypes.INTEGER,

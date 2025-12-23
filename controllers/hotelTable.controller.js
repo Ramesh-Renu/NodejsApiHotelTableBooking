@@ -11,8 +11,7 @@ import { sequelize } from "../config/db.js";
 export const createHotelTable = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { floor, tables_per_floor, chairs_per_table, area_id } = req.body;
-
+    const { floor, tables_per_floor, chairs_per_table, area_id } = req.body;    
     if (!area_id) {
       await t.rollback();
       return res.status(400).json({ success: false, message: "area_id is required" });
@@ -93,8 +92,8 @@ export const getAllHotelTables = async (req, res) => {
         return {
           id: hotel.id,
           hotel_name: hotel.hotel_name,
-          location: hotel.location,
-          building: hotel.building,
+          location_id: hotel.location_id,
+          address: hotel.address,
           floor: hotel.floor,
           tables_per_floor: hotel.tables_per_floor,
           chairs_per_table: hotel.chairs_per_table,
@@ -160,7 +159,6 @@ export const updateHotelTable = async (req, res) => {
         message: "Hotel table not found",
       });
     }
-
     await data.update(req.body);
 
     res.json({

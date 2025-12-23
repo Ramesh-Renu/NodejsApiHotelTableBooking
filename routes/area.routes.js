@@ -34,8 +34,6 @@ const router = express.Router();
  *                 type: string
  *               location_id:
  *                 type: integer
- *               location_name:
- *                 type: string
  *     responses:
  *       201:
  *         description: Area created successfully
