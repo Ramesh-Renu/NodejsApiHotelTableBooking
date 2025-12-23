@@ -10,7 +10,6 @@ import {
 } from "../controllers/hotelTable.controller.js";
 
 const router = express.Router();
-
 /**
  * @swagger
  * tags:
@@ -87,18 +86,44 @@ router.post(
   },
   createHotelTable
 );
+
 /**
  * @swagger
  * /api/hotel:
  *   get:
- *     summary: Get all hotel tables
+ *     summary: Get all hotels with optional search and location filter
  *     tags: [HotelTables]
+ *     description: |
+ *       Returns a list of hotels with calculated counts.
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: |
+ *           Generic search term. Matches hotel name or location name.
+ *         example: ""
  *     responses:
  *       200:
- *         description: Hotel table list fetched successfully
+ *         description: Hotels fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *       401:
+ *         description: Unauthorized (authentication required)
+ *
+ *       500:
+ *         description: Failed to fetch hotel tables
  */
 
 router.get("/", authenticate, getAllHotelTables); // READ ALL
+
 /**
  * @swagger
  * /api/hotel/{id}:
@@ -149,6 +174,8 @@ router.get("/:id", authenticate, getHotelTableById); // READ ONE
  *                 type: integer
  *                 example: 1
  *               area_id:
+ *                type: integer
+ *                example: 1
  *               address:
  *                 type: string
  *                 example: "Block B"

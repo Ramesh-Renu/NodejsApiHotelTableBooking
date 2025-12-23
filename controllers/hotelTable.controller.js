@@ -3,6 +3,8 @@ import Area from "../models/area.model.js";
 import Floor from "../models/floor.model.js";
 import Table from "../models/table.model.js";
 import Seat from "../models/seat.model.js";
+import Location from "../models/location.model.js";
+import { Op } from "sequelize";
 import { sequelize } from "../config/db.js";
 
 /**
@@ -77,17 +79,77 @@ export const createHotelTable = async (req, res) => {
  */
 export const getAllHotelTables = async (req, res) => {
   try {
-    const hotels = await HotelTable.findAll();
+    const { search, hotel_name, q, location, location_id } = req.query;
 
+    const hotelsWhere = {};
+
+    /* ---------------- location_id filter ---------------- */
+    if (location_id) {
+      const idNum = Number(location_id);
+      if (!isNaN(idNum)) {
+        hotelsWhere.location_id = idNum;
+      }
+    }
+
+    /* ---------------- unified search term ---------------- */
+    const term = (search || hotel_name || q || location || "").trim();
+
+    if (term) {
+      // 1️⃣ find matching locations by PARTIAL match
+      const locations = await Location.findAll({
+        where: {
+          name: {
+            // 🔥 use Op.iLike for PostgreSQL, Op.like for MySQL
+            [Op.iLike]: `%${term}%`,
+          },
+        },
+        attributes: ["id"],
+      });
+
+      const locationIds = locations.map((l) => l.id);
+
+      // 2️⃣ apply OR condition
+      hotelsWhere[Op.or] = [
+        {
+          hotel_name: {
+            [Op.iLike]: `%${term}%`,
+          },
+        },
+        ...(locationIds.length
+          ? [
+              {
+                location_id: {
+                  [Op.in]: locationIds,
+                },
+              },
+            ]
+          : []),
+      ];
+    }
+
+    /* ---------------- fetch hotels ---------------- */
+    const hotels = await HotelTable.findAll({
+      where: hotelsWhere,
+      order: [["id", "ASC"]],
+    });
+
+    /* ---------------- counts ---------------- */
     const result = await Promise.all(
       hotels.map(async (hotel) => {
-        const floorCount = await Floor.count({ where: { hotel_table_id: hotel.id } });
+        const floorCount = await Floor.count({
+          where: { hotel_table_id: hotel.id },
+        });
 
-        const tables = await Table.findAll({ where: { hotel_table_id: hotel.id }, attributes: ["id"] });
-        const tableCount = tables.length;
+        const tables = await Table.findAll({
+          where: { hotel_table_id: hotel.id },
+          attributes: ["id"],
+        });
 
         const tableIds = tables.map((t) => t.id);
-        const seatCount = tableIds.length ? await Seat.count({ where: { table_id: tableIds } }) : 0;
+
+        const seatCount = tableIds.length
+          ? await Seat.count({ where: { table_id: tableIds } })
+          : 0;
 
         return {
           id: hotel.id,
@@ -99,7 +161,7 @@ export const getAllHotelTables = async (req, res) => {
           chairs_per_table: hotel.chairs_per_table,
           area_id: hotel.area_id,
           floorCount,
-          tableCount,
+          tableCount: tables.length,
           seatCount,
         };
       })
@@ -114,7 +176,6 @@ export const getAllHotelTables = async (req, res) => {
     });
   }
 };
-
 /**
  * GET hotel table by ID
  */
