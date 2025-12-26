@@ -33,7 +33,6 @@ const router = express.Router();
  *             required:
  *               - hotel_name
  *               - location
- *               - floor
  *               - tables_per_floor
  *               - chairs_per_table
  *               - area_id
@@ -47,9 +46,6 @@ const router = express.Router();
  *               address:
  *                 type: string
  *                 example: "string"
- *               floor:
- *                 type: integer
- *                 example: 1
  *               tables_per_floor:
  *                 type: integer
  *                 example: 1
@@ -75,7 +71,6 @@ router.post(
     body("hotel_name").notEmpty(),
     body("location_id").isInt({ min: 1 }).withMessage("location_id is required and must be a positive integer"),
     body("area_id").isInt({ min: 1 }).withMessage("area_id is required and must be a positive integer"),
-    body("floor").isInt({ min: 1 }),
     body("tables_per_floor").isInt({ min: 1 }),
     body("chairs_per_table").isInt({ min: 1 }),
   ],
@@ -179,9 +174,6 @@ router.get("/:id", authenticate, getHotelTableById); // READ ONE
  *               address:
  *                 type: string
  *                 example: "Block B"
- *               floor:
- *                 type: integer
- *                 example: 3
  *               tables_per_floor:
  *                 type: integer
  *                 example: 12

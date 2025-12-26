@@ -66,7 +66,7 @@ router
   .route("/hotel/:hotelTableId")
   .post(
     authenticate,
-    authorizeRoles("admin"),
+    authorizeRoles("Admin"),
     [param("hotelTableId").isInt().withMessage("hotelTableId must be an integer"), body("tableCount").isInt({ gt: 0 }).withMessage("tableCount must be an integer greater than 0")],
     validate,
     createTablesForHotel
@@ -124,7 +124,7 @@ router.get(
 router.delete(
   "/:tableId",
   authenticate,
-  authorizeRoles("admin"),
+  authorizeRoles("Admin"),
   [param("tableId").isInt().withMessage("tableId must be an integer")],
   validate,
   deleteTable

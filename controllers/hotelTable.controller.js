@@ -10,67 +10,142 @@ import { sequelize } from "../config/db.js";
 /**
  * CREATE hotel table
  */
+/**
+ * CREATE hotel with floors, tables and seats
+ */
 export const createHotelTable = async (req, res) => {
   const t = await sequelize.transaction();
+
   try {
-    const { floor, tables_per_floor, chairs_per_table, area_id } = req.body;    
+    const {
+      floor_per_hotel,
+      tables_per_floor,
+      chairs_per_table,
+      area_id,
+      ...hotelPayload
+    } = req.body;
+
+    /* ---------------- validation ---------------- */
     if (!area_id) {
       await t.rollback();
-      return res.status(400).json({ success: false, message: "area_id is required" });
+      return res.status(400).json({
+        success: false,
+        message: "area_id is required",
+      });
+    }
+
+    if (!floor_per_hotel || floor_per_hotel <= 0) {
+      await t.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "floor_per_hotel must be greater than 0",
+      });
+    }
+
+    if (!tables_per_floor || tables_per_floor <= 0) {
+      await t.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "tables_per_floor must be greater than 0",
+      });
+    }
+
+    if (!chairs_per_table || chairs_per_table <= 0) {
+      await t.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "chairs_per_table must be greater than 0",
+      });
     }
 
     const area = await Area.findByPk(area_id);
     if (!area) {
       await t.rollback();
-      return res.status(400).json({ success: false, message: "area_id is invalid" });
+      return res.status(400).json({
+        success: false,
+        message: "area_id is invalid",
+      });
     }
 
-    const hotel = await HotelTable.create(req.body, { transaction: t });
+    /* ---------------- create hotel ---------------- */
+    const hotel = await HotelTable.create(
+      {
+        ...hotelPayload,
+        area_id,
+        floor_per_hotel, // ✅ store count only
+      },
+      { transaction: t }
+    );
 
-    // create floors and get their ids
+    /* ---------------- create floors ---------------- */
     const floorRecords = [];
-    for (let f = 1; f <= (floor || 0); f++) {
-      floorRecords.push({ hotel_table_id: hotel.id, floor_number: f });
+    for (let f = 1; f <= floor_per_hotel; f++) {
+      floorRecords.push({
+        hotel_table_id: hotel.id,
+        floor_number: f,
+      });
     }
-    const createdFloors = floorRecords.length
-      ? await Floor.bulkCreate(floorRecords, { transaction: t, returning: true })
-      : [];
 
-    // create tables and set floor_id for each table
+    const createdFloors = await Floor.bulkCreate(floorRecords, {
+      transaction: t,
+      returning: true,
+    });
+
+    /* ---------------- create tables ---------------- */
     const tableRecords = [];
-    for (let fi = 0; fi < (createdFloors.length || 0); fi++) {
-      const fNum = createdFloors[fi].floor_number || fi + 1;
-      const floorId = createdFloors[fi].id;
-      for (let i = 1; i <= (tables_per_floor || 0); i++) {
-        const tableNumber = fi * (tables_per_floor || 0) + i;
-        tableRecords.push({ hotel_table_id: hotel.id, table_number: tableNumber, floor_number: fNum, floor_id: floorId });
+    for (const floor of createdFloors) {
+      for (let i = 1; i <= tables_per_floor; i++) {
+        tableRecords.push({
+          hotel_table_id: hotel.id,
+          floor_id: floor.id,
+          floor_number: floor.floor_number,
+          table_number:
+            (floor.floor_number - 1) * tables_per_floor + i,
+        });
       }
     }
 
-    const createdTables = tableRecords.length
-      ? await Table.bulkCreate(tableRecords, { transaction: t, returning: true })
-      : [];
+    const createdTables = await Table.bulkCreate(tableRecords, {
+      transaction: t,
+      returning: true,
+    });
 
-    // create seats for each table
+    /* ---------------- create seats ---------------- */
     const seatRecords = [];
-    for (const tbl of createdTables) {
-      for (let s = 1; s <= (chairs_per_table || 0); s++) {
-        seatRecords.push({ table_id: tbl.id, seat_number: s });
+    for (const table of createdTables) {
+      for (let s = 1; s <= chairs_per_table; s++) {
+        seatRecords.push({
+          table_id: table.id,
+          seat_number: s,
+        });
       }
     }
-    if (seatRecords.length) await Seat.bulkCreate(seatRecords, { transaction: t });
+
+    if (seatRecords.length) {
+      await Seat.bulkCreate(seatRecords, { transaction: t });
+    }
 
     await t.commit();
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Hotel created with floors, tables and seats",
-      data: { hotel, tablesCreated: createdTables.length, seatsCreated: seatRecords.length },
+      data: {
+        hotel_id: hotel.id,
+        floor_per_hotel,
+        floors_created: createdFloors.length,
+        tables_created: createdTables.length,
+        seats_created: seatRecords.length,
+      },
     });
   } catch (error) {
     await t.rollback();
     console.error("Create error:", error);
-    res.status(500).json({ success: false, message: "Failed to create hotel table" });
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create hotel",
+    });
   }
 };
 
@@ -156,7 +231,6 @@ export const getAllHotelTables = async (req, res) => {
           hotel_name: hotel.hotel_name,
           location_id: hotel.location_id,
           address: hotel.address,
-          floor: hotel.floor,
           tables_per_floor: hotel.tables_per_floor,
           chairs_per_table: hotel.chairs_per_table,
           area_id: hotel.area_id,

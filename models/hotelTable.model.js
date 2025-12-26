@@ -25,10 +25,6 @@ const HotelTable = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-    floor: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-    },
     location_id: {
       type: DataTypes.INTEGER,
       allowNull: true,

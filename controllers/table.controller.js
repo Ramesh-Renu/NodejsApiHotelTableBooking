@@ -2,6 +2,7 @@ import HotelTable from "../models/hotelTable.model.js";
 import Floor from "../models/floor.model.js";
 import Table from "../models/table.model.js";
 import Seat from "../models/seat.model.js";
+
 /**
  * CREATE tables for a hotel
  * Admin creates actual tables based on count
@@ -27,25 +28,42 @@ export const createTablesForHotel = async (req, res) => {
       });
     }
 
-    const tables = [];
+    // 🔥 Find last table number for this hotel
+    const lastTable = await Table.findOne({
+      where: { hotel_table_id: hotelTableId },
+      order: [["table_number", "DESC"]],
+    });
 
-    for (let i = 1; i <= tableCount; i++) {
+    const startNumber = lastTable ? lastTable.table_number + 1 : 1;
+
+    // 🔢 Prepare new tables
+    const tables = [];
+    for (let i = 0; i < tableCount; i++) {
       tables.push({
         hotel_table_id: hotelTableId,
-        table_number: i,
+        table_number: startNumber + i,
       });
     }
 
     const createdTables = await Table.bulkCreate(tables);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Tables created successfully",
       data: createdTables,
     });
   } catch (error) {
     console.error("Create tables error:", error);
-    res.status(500).json({
+
+    // Handle unique constraint explicitly (safety)
+    if (error.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({
+        success: false,
+        message: "Table number already exists for this hotel",
+      });
+    }
+
+    return res.status(500).json({
       success: false,
       message: "Failed to create tables",
     });
@@ -53,7 +71,7 @@ export const createTablesForHotel = async (req, res) => {
 };
 
 /**
- * GET all tables of a hotel
+ * GET all tables of a hotel (floor → table → seat)
  */
 export const getTablesByHotel = async (req, res) => {
   try {
@@ -88,7 +106,6 @@ export const getTablesByHotel = async (req, res) => {
     }
 
     const floorsData = hotel.floors.map((floor) => {
-      let totalTables = floor.tables.length;
       let totalSeats = 0;
       let availableSeats = 0;
       let availableTables = 0;
@@ -98,7 +115,6 @@ export const getTablesByHotel = async (req, res) => {
 
         const seats = table.seats.map((seat) => {
           totalSeats++;
-
           if (!seat.is_booked) {
             availableSeats++;
             tableHasFreeSeat = true;
@@ -126,14 +142,14 @@ export const getTablesByHotel = async (req, res) => {
         floor_id: floor.id,
         floor_number: floor.floor_number,
         tables,
-        number_of_tables: totalTables,
+        number_of_tables: floor.tables.length,
         number_of_seats: totalSeats,
         available_of_tables: availableTables,
         available_of_seats: availableSeats,
       };
     });
 
-    res.json({
+    return res.json({
       success: true,
       data: [
         {
@@ -143,9 +159,10 @@ export const getTablesByHotel = async (req, res) => {
       ],
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Get tables error:", error);
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Failed to fetch hotel tables",
     });
   }
 };
@@ -167,13 +184,13 @@ export const deleteTable = async (req, res) => {
 
     await table.destroy();
 
-    res.json({
+    return res.json({
       success: true,
       message: "Table deleted successfully",
     });
   } catch (error) {
     console.error("Delete table error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to delete table",
     });
