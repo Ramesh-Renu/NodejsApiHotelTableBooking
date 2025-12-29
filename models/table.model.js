@@ -9,17 +9,23 @@ const Table = sequelize.define(
       primaryKey: true,
       autoIncrement: true,
     },
+
     hotel_table_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+
     floor_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+
     table_number: {
       type: DataTypes.INTEGER,
       allowNull: false,
+      validate: {
+        min: 1,
+      },
     },
   },
   {
@@ -28,7 +34,7 @@ const Table = sequelize.define(
     indexes: [
       {
         unique: true,
-        fields: ["floor_id", "table_number"], // ✅ ONLY THIS
+        fields: ["hotel_table_id", "floor_id", "table_number"],
       },
     ],
   }

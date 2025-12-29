@@ -8,9 +8,6 @@ import { Op } from "sequelize";
 import { sequelize } from "../config/db.js";
 
 /**
- * CREATE hotel table
- */
-/**
  * CREATE hotel with floors, tables and seats
  */
 export const createHotelTable = async (req, res) => {
@@ -100,7 +97,7 @@ export const createHotelTable = async (req, res) => {
         tableRecords.push({
           hotel_table_id: hotel.id,
           floor_id: floor.id,
-          table_number: i,
+          table_number: i + 1,
         });
       }
     }
@@ -288,32 +285,202 @@ export const getHotelTableById = async (req, res) => {
 };
 
 /**
- * UPDATE hotel table
+ * UPDATE hotel + sync floors, tables, seats
  */
 export const updateHotelTable = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
   try {
     const { id } = req.params;
+    const {
+      hotel_name,
+      location_id,
+      area_id,
+      address,
+      floor_per_hotel,
+      tables_per_floor,
+      chairs_per_table,
+    } = req.body;
 
-    const data = await HotelTable.findByPk(id);
+    /* -----------------------------
+       1️⃣ Fetch hotel
+    ------------------------------*/
+    const hotel = await HotelTable.findByPk(id, { transaction });
 
-    if (!data) {
+    if (!hotel) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
-        message: "Hotel table not found",
+        message: "Hotel not found",
       });
     }
-    await data.update(req.body);
 
-    res.json({
+    /* -----------------------------
+       2️⃣ Update hotel basic fields
+    ------------------------------*/
+    await hotel.update(
+      {
+        hotel_name,
+        location_id,
+        area_id,
+        address,
+        tables_per_floor,
+        chairs_per_table,
+      },
+      { transaction }
+    );
+
+    /* -----------------------------
+       3️⃣ SYNC FLOORS
+    ------------------------------*/
+    if (Number.isInteger(floor_per_hotel)) {
+      const floors = await Floor.findAll({
+        where: { hotel_table_id: id },
+        order: [["floor_number", "ASC"]],
+        transaction,
+      });
+
+      const currentFloorCount = floors.length;
+
+      // ➕ Add floors
+      if (floor_per_hotel > currentFloorCount) {
+        const newFloors = [];
+        for (let i = currentFloorCount + 1; i <= floor_per_hotel; i++) {
+          newFloors.push({
+            hotel_table_id: id,
+            floor_number: i,
+          });
+        }
+        await Floor.bulkCreate(newFloors, { transaction });
+      }
+
+      // ➖ Remove floors (optional safety check)
+      if (floor_per_hotel < currentFloorCount) {
+        const floorsToRemove = floors.slice(floor_per_hotel);
+        const floorIds = floorsToRemove.map((f) => f.id);
+
+        await Floor.destroy({
+          where: { id: floorIds },
+          transaction,
+        });
+      }
+    }
+
+    /* -----------------------------
+       4️⃣ SYNC TABLES PER FLOOR
+    ------------------------------*/
+    if (Number.isInteger(tables_per_floor)) {
+      const floors = await Floor.findAll({
+        where: { hotel_table_id: id },
+        transaction,
+      });
+
+      for (const floor of floors) {
+        const tables = await Table.findAll({
+          where: { floor_id: floor.id },
+          order: [["table_number", "ASC"]],
+          transaction,
+        });
+
+        const currentTableCount = tables.length;
+
+        // ➕ Add tables
+        if (tables_per_floor > currentTableCount) {
+          const newTables = [];
+          for (let i = currentTableCount + 1; i <= tables_per_floor; i++) {
+            newTables.push({
+              hotel_table_id: id, // ✅ REQUIRED
+              floor_id: floor.id,
+              table_number: i,
+            });
+          }
+          await Table.bulkCreate(newTables, { transaction });
+        }
+
+        // ➖ Remove tables (safe delete recommended)
+        if (tables_per_floor < currentTableCount) {
+          const tablesToRemove = tables.slice(tables_per_floor);
+          const tableIds = tablesToRemove.map((t) => t.id);
+
+          await Table.destroy({
+            where: { id: tableIds },
+            transaction,
+          });
+        }
+      }
+    }
+
+    /* -----------------------------
+   5️⃣ SYNC CHAIRS (SEATS)
+------------------------------*/
+    if (Number.isInteger(chairs_per_table)) {
+      // 🔴 MUST re-fetch tables AFTER table sync
+      const tables = await Table.findAll({
+        where: { hotel_table_id: id }, // hotel scoped
+        include: [{ model: Seat, as: "seats" }],
+        transaction,
+      });
+      for (const table of tables) {
+        const seats = table.seats || [];
+
+        // ✅ SAFE next seat number
+        const maxSeatNumber = seats.length
+          ? Math.max(...seats.map((s) => s.seat_number))
+          : 0;
+
+        /* ➕ ADD SEATS */
+        if (chairs_per_table > seats.length) {
+          const newSeats = [];
+
+          for (
+            let seatNo = maxSeatNumber + 1;
+            seatNo <= chairs_per_table;
+            seatNo++
+          ) {
+            newSeats.push({
+              table_id: table.id, // ✅ guaranteed to exist
+              seat_number: seatNo,
+              is_booked: false,
+            });
+          }
+
+          if (newSeats.length) {
+            await Seat.bulkCreate(newSeats, { transaction });
+          }
+        }
+
+        /* ➖ REMOVE SEATS (only unbooked, highest numbers first) */
+        if (chairs_per_table < seats.length) {
+          const removableSeats = seats
+            .filter((s) => !s.is_booked)
+            .sort((a, b) => b.seat_number - a.seat_number)
+            .slice(0, seats.length - chairs_per_table);
+
+          const seatIds = removableSeats.map((s) => s.id);
+
+          if (seatIds.length) {
+            await Seat.destroy({
+              where: { id: seatIds },
+              transaction,
+            });
+          }
+        }
+      }
+    }
+
+    await transaction.commit();
+
+    return res.json({
       success: true,
-      message: "Hotel table updated successfully",
-      data,
+      message: "Hotel, floors, tables, and seats updated successfully",
     });
   } catch (error) {
+    await transaction.rollback();
     console.error("Update error:", error);
-    res.status(500).json({
+
+    return res.status(500).json({
       success: false,
-      message: "Failed to update hotel table",
+      message: "Failed to update hotel",
     });
   }
 };

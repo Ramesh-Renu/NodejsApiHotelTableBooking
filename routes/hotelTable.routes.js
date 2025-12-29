@@ -140,12 +140,15 @@ router.get("/", authenticate, getAllHotelTables); // READ ALL
  */
 
 router.get("/:id", authenticate, getHotelTableById); // READ ONE
+
 /**
  * @swagger
  * /api/hotel/{id}:
  *   put:
- *     summary: Update hotel table details
- *     tags: [HotelTables]
+ *     summary: Update hotel details
+ *     description: Update hotel basic information along with floor, table, and seat configuration.
+ *     tags:
+ *       - HotelTables
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -155,41 +158,67 @@ router.get("/:id", authenticate, getHotelTableById); // READ ONE
  *         schema:
  *           type: integer
  *           example: 1
+ *         description: Hotel ID
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - hotel_name
+ *               - location_id
+ *               - area_id
+ *               - address
+ *               - floor_per_hotel
+ *               - tables_per_floor
+ *               - chairs_per_table
  *             properties:
  *               hotel_name:
  *                 type: string
- *                 example: "Grand Palace Updated"
+ *                 example: "Grand Palace"
  *               location_id:
  *                 type: integer
  *                 example: 1
  *               area_id:
- *                type: integer
- *                example: 1
+ *                 type: integer
+ *                 example: 5
  *               address:
  *                 type: string
- *                 example: "Block B"
+ *                 example: "Grand Southern Trunk Rd, near MIT GATE"
+ *               floor_per_hotel:
+ *                 type: integer
+ *                 example: 1
  *               tables_per_floor:
  *                 type: integer
- *                 example: 12
+ *                 example: 10
  *               chairs_per_table:
  *                 type: integer
- *                 example: 6
+ *                 example: 4
  *     responses:
  *       200:
- *         description: Hotel table updated successfully
- *       404:
- *         description: Hotel table not found
+ *         description: Hotel updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Hotel updated successfully
  *       401:
  *         description: Unauthorized
+ *       404:
+ *         description: Hotel not found
+ *       500:
+ *         description: Server error
  */
-
 router.put("/:id", authenticate, updateHotelTable); // UPDATE
+
+
 /**
  * @swagger
  * /api/hotel/{id}:
