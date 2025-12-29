@@ -73,6 +73,8 @@ export const createHotelTable = async (req, res) => {
         ...hotelPayload,
         area_id,
         floor_per_hotel, // ✅ store count only
+        tables_per_floor, // ✅ ADD THIS
+        chairs_per_table, // ✅ ADD THIS
       },
       { transaction: t }
     );
@@ -98,21 +100,27 @@ export const createHotelTable = async (req, res) => {
         tableRecords.push({
           hotel_table_id: hotel.id,
           floor_id: floor.id,
-          floor_number: floor.floor_number,
-          table_number:
-            (floor.floor_number - 1) * tables_per_floor + i,
+          table_number: i,
         });
       }
     }
 
     const createdTables = await Table.bulkCreate(tableRecords, {
       transaction: t,
-      returning: true,
+    });
+
+    /* ---------------- re-fetch tables safely ---------------- */
+    const tablesForSeats = await Table.findAll({
+      where: {
+        hotel_table_id: hotel.id,
+      },
+      transaction: t,
     });
 
     /* ---------------- create seats ---------------- */
     const seatRecords = [];
-    for (const table of createdTables) {
+
+    for (const table of tablesForSeats) {
       for (let s = 1; s <= chairs_per_table; s++) {
         seatRecords.push({
           table_id: table.id,

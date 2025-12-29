@@ -40,6 +40,12 @@ const validate = (req, res, next) => {
  *         schema:
  *           type: integer
  *           example: 1
+ *       - in: path
+ *         name: floorId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           example: 1
  *     requestBody:
  *       required: true
  *       content:
@@ -51,7 +57,7 @@ const validate = (req, res, next) => {
  *             properties:
  *               tableCount:
  *                 type: integer
- *                 example: 10
+ *                 example: 1
  *     responses:
  *       201:
  *         description: Tables created successfully
@@ -63,14 +69,27 @@ const validate = (req, res, next) => {
  *         description: Hotel not found
  */
 router
-  .route("/hotel/:hotelTableId")
+  .route("/hotel/:hotelTableId/:floorId")
   .post(
     authenticate,
     authorizeRoles("Admin"),
-    [param("hotelTableId").isInt().withMessage("hotelTableId must be an integer"), body("tableCount").isInt({ gt: 0 }).withMessage("tableCount must be an integer greater than 0")],
+    [
+      param("hotelTableId")
+        .isInt()
+        .withMessage("hotelTableId must be an integer"),
+
+      param("floorId")
+        .isInt()
+        .withMessage("floorId must be an integer"),
+
+      body("tableCount")
+        .isInt({ gt: 0 })
+        .withMessage("tableCount must be an integer greater than 0"),
+    ],
     validate,
     createTablesForHotel
   );
+
 
 /**
  * @swagger
@@ -93,7 +112,11 @@ router
  */
 router.get(
   "/hotel/:hotelTableId",
-  [param("hotelTableId").isInt().withMessage("hotelTableId must be an integer")],
+  [
+    param("hotelTableId")
+      .isInt()
+      .withMessage("hotelTableId must be an integer"),
+  ],
   validate,
   getTablesByHotel
 );

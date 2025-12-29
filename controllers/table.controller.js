@@ -9,7 +9,7 @@ import Seat from "../models/seat.model.js";
  */
 export const createTablesForHotel = async (req, res) => {
   try {
-    const { hotelTableId } = req.params;
+    const { hotelTableId, floorId } = req.params;
     const { tableCount } = req.body;
 
     if (!tableCount || tableCount <= 0) {
@@ -28,9 +28,27 @@ export const createTablesForHotel = async (req, res) => {
       });
     }
 
-    // 🔥 Find last table number for this hotel
+    // 🔎 Check floor exists & belongs to hotel
+    const floor = await Floor.findOne({
+      where: {
+        id: floorId,
+        hotel_table_id: hotelTableId,
+      },
+    });
+
+    if (!floor) {
+      return res.status(404).json({
+        success: false,
+        message: "Floor not found for this hotel",
+      });
+    }
+
+    // 🔥 Find last table number FOR THIS FLOOR
     const lastTable = await Table.findOne({
-      where: { hotel_table_id: hotelTableId },
+      where: {
+        // hotel_table_id: hotelTableId,
+        floor_id: floorId,
+      },
       order: [["table_number", "DESC"]],
     });
 
@@ -41,6 +59,7 @@ export const createTablesForHotel = async (req, res) => {
     for (let i = 0; i < tableCount; i++) {
       tables.push({
         hotel_table_id: hotelTableId,
+        floor_id: floorId,
         table_number: startNumber + i,
       });
     }
@@ -50,22 +69,23 @@ export const createTablesForHotel = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Tables created successfully",
-      data: createdTables,
+      // data: createdTables,
     });
   } catch (error) {
     console.error("Create tables error:", error);
 
-    // Handle unique constraint explicitly (safety)
+    // 🔴 Only duplicate table number
     if (error.name === "SequelizeUniqueConstraintError") {
       return res.status(409).json({
         success: false,
-        message: "Table number already exists for this hotel",
+        message: "Table number already exists on this floor",
       });
     }
 
+    // 🔴 Foreign key / not-null / other DB errors
     return res.status(500).json({
       success: false,
-      message: "Failed to create tables",
+      message: error.message || "Failed to create tables",
     });
   }
 };
@@ -140,7 +160,7 @@ export const getTablesByHotel = async (req, res) => {
 
       return {
         floor_id: floor.id,
-        floor_number: floor.floor_number,
+        // floor_number: floor.floor_number,
         tables,
         number_of_tables: floor.tables.length,
         number_of_seats: totalSeats,

@@ -15,22 +15,22 @@ const Table = sequelize.define(
     },
     floor_id: {
       type: DataTypes.INTEGER,
-      allowNull: true,
+      allowNull: false,
     },
     table_number: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
-      floor_number: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        defaultValue: 1,
-      },
   },
   {
     tableName: "tables",
     timestamps: true,
-    indexes: [{ unique: true, fields: ["hotel_table_id", "table_number"] }],
+    indexes: [
+      {
+        unique: true,
+        fields: ["floor_id", "table_number"], // ✅ ONLY THIS
+      },
+    ],
   }
 );
 
