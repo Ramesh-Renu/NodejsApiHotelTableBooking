@@ -3,9 +3,18 @@ import Area from "../models/area.model.js";
 import Floor from "../models/floor.model.js";
 import Table from "../models/table.model.js";
 import Seat from "../models/seat.model.js";
+import Reservation from "../models/reservation.model.js";
 import Location from "../models/location.model.js";
 import { Op } from "sequelize";
 import { sequelize } from "../config/db.js";
+
+
+const SEAT_STATUS = {
+  BOOKED: 1,
+  CANCEL: 2,
+  CLEANING: 3,
+  AVAILABLE: 4,
+};
 
 /**
  * CREATE hotel with floors, tables and seats
@@ -122,6 +131,7 @@ export const createHotelTable = async (req, res) => {
         seatRecords.push({
           table_id: table.id,
           seat_number: s,
+          status: SEAT_STATUS.AVAILABLE, // ✅ 4
         });
       }
     }
@@ -255,6 +265,7 @@ export const getAllHotelTables = async (req, res) => {
     });
   }
 };
+
 /**
  * GET hotel table by ID
  */
@@ -409,26 +420,25 @@ export const updateHotelTable = async (req, res) => {
         }
       }
     }
-
+    
     /* -----------------------------
-   5️⃣ SYNC CHAIRS (SEATS)
-------------------------------*/
+         5️⃣ SYNC CHAIRS (SEATS)
+  ------------------------------*/
     if (Number.isInteger(chairs_per_table)) {
-      // 🔴 MUST re-fetch tables AFTER table sync
       const tables = await Table.findAll({
-        where: { hotel_table_id: id }, // hotel scoped
+        where: { hotel_table_id: id },
         include: [{ model: Seat, as: "seats" }],
         transaction,
       });
+
       for (const table of tables) {
         const seats = table.seats || [];
 
-        // ✅ SAFE next seat number
         const maxSeatNumber = seats.length
           ? Math.max(...seats.map((s) => s.seat_number))
           : 0;
 
-        /* ➕ ADD SEATS */
+        /* ➕ ADD SEATS (AVAILABLE = 4) */
         if (chairs_per_table > seats.length) {
           const newSeats = [];
 
@@ -438,9 +448,9 @@ export const updateHotelTable = async (req, res) => {
             seatNo++
           ) {
             newSeats.push({
-              table_id: table.id, // ✅ guaranteed to exist
+              table_id: table.id,
               seat_number: seatNo,
-              is_booked: false,
+              status: SEAT_STATUS.AVAILABLE, // ✅ 4
             });
           }
 
@@ -449,10 +459,10 @@ export const updateHotelTable = async (req, res) => {
           }
         }
 
-        /* ➖ REMOVE SEATS (only unbooked, highest numbers first) */
+        /* ➖ REMOVE SEATS (ONLY AVAILABLE = 4) */
         if (chairs_per_table < seats.length) {
           const removableSeats = seats
-            .filter((s) => !s.is_booked)
+            .filter((s) => s.status === SEAT_STATUS.AVAILABLE) // ✅ 4
             .sort((a, b) => b.seat_number - a.seat_number)
             .slice(0, seats.length - chairs_per_table);
 

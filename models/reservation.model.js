@@ -5,59 +5,63 @@ const Reservation = sequelize.define(
   "Reservation",
   {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
+      type: DataTypes.INTEGER,          // ✅ matches DB
+      autoIncrement: true,
       primaryKey: true,
     },
 
     hotel_id: {
-      type: DataTypes.UUID,
-      allowNull: false,
-    },
-
-    table_id: {
-      type: DataTypes.UUID,
-      allowNull: true,
-    },
-
-    seat_id: {
-      type: DataTypes.UUID,
-      allowNull: true,
-    },
-
-    customer_name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-
-    customer_mobile: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-
-    reservation_date: {
-      type: DataTypes.DATEONLY,
-      allowNull: false,
-    },
-
-    reservation_time: {
-      type: DataTypes.TIME,
-      allowNull: false,
-    },
-
-    guest_count: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
 
-    status: {
-      type: DataTypes.ENUM("BOOKED", "CANCELLED", "COMPLETED"),
-      defaultValue: "BOOKED",
+    floor_id: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+
+    user_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    booking_date: {
+      type: DataTypes.DATEONLY,         // date
+      allowNull: false,
+    },
+
+    start_time: {
+      type: DataTypes.TIME,             // time without time zone
+      allowNull: false,
+    },
+
+    end_time: {
+      type: DataTypes.TIME,
+      allowNull: true,
+    },
+
+    seat_status: {
+      type: DataTypes.JSONB,             // ✅ key change
+      allowNull: false,
+    },
+
+    reservation_date: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW,
+    },
+
+    updated_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW,
     },
   },
   {
     tableName: "reservations",
     timestamps: true,
+    createdAt: "reservation_date",
+    updatedAt: "updated_at",
   }
 );
 

@@ -19,6 +19,38 @@ const router = express.Router();
 
 /**
  * @swagger
+ * components:
+ *   schemas:
+ *     Seat:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 10
+ *         table_id:
+ *           type: integer
+ *           example: 5
+ *         seat_number:
+ *           type: integer
+ *           example: 1
+ *         status:
+ *           type: integer
+ *           enum: [1, 2, 3, 4]
+ *           description: |
+ *             1 = BOOKED  
+ *             2 = CANCEL  
+ *             3 = CLEANING  
+ *             4 = AVAILABLE
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ */
+
+/**
+ * @swagger
  * /api/seats/multiple/table/{tableId}:
  *   post:
  *     summary: Auto-create seats for a table (Admin)
@@ -55,9 +87,10 @@ router.post("/multiple/table/:tableId", authenticate, createSeatsForTable);
  * /api/seats/table/{tableId}/add:
  *   post:
  *     summary: Add seats to a table
- *     description: Adds new seats to a table. Seat numbers start from 1 for each table.
- *     tags:
- *       - Seats
+ *     description: Adds new seats to a table. Newly added seats are set to AVAILABLE.
+ *     tags: [Seats]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: tableId
@@ -80,39 +113,7 @@ router.post("/multiple/table/:tableId", authenticate, createSeatsForTable);
  *     responses:
  *       201:
  *         description: Seats added successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Seats added successfully
- *                 seats:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       seat_id:
- *                         type: integer
- *                         example: 925
- *                       seat_number:
- *                         type: integer
- *                         example: 1
- *                       is_booked:
- *                         type: boolean
- *                         example: false
- *       400:
- *         description: Invalid seat count
- *       404:
- *         description: Table not found
- *       500:
- *         description: Server error
  */
-
 router.post("/table/:tableId/add", authenticate, addSeatsToTable);
 
 /**
@@ -120,9 +121,10 @@ router.post("/table/:tableId/add", authenticate, addSeatsToTable);
  * /api/seats/table/{tableId}/remove:
  *   delete:
  *     summary: Remove specific seats from a table
- *     description: Remove seats from a table using an array of seat IDs. Booked seats cannot be removed.
- *     tags:
- *       - Seats
+ *     description: Only AVAILABLE seats (status = 4) can be removed
+ *     tags: [Seats]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: tableId
@@ -143,50 +145,15 @@ router.post("/table/:tableId/add", authenticate, addSeatsToTable);
  *                 type: array
  *                 items:
  *                   type: integer
- *                 example: [925, 265]
+ *                 example: [925, 926]
  *     responses:
  *       200:
  *         description: Seats removed successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Seats removed successfully
- *                 removedSeatIds:
- *                   type: array
- *                   items:
- *                     type: integer
- *                   example: [925, 265]
  *       400:
- *         description: Invalid request or booked seats
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: Cannot remove booked seats
- *                 bookedSeatIds:
- *                   type: array
- *                   items:
- *                     type: integer
- *                   example: [925]
- *       404:
- *         description: Table not found
+ *         description: Cannot remove non-available seats
  *       500:
  *         description: Server error
  */
-
 router.delete("/table/:tableId/remove", authenticate, removeSeatsFromTable);
 
 /**
@@ -205,6 +172,12 @@ router.delete("/table/:tableId/remove", authenticate, removeSeatsFromTable);
  *     responses:
  *       200:
  *         description: Seats fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Seat'
  */
 router.get("/table/:tableId", getSeatsByTable);
 
@@ -230,14 +203,24 @@ router.get("/table/:tableId", getSeatsByTable);
  *           schema:
  *             type: object
  *             required:
- *               - is_booked
+ *               - status
  *             properties:
- *               is_booked:
- *                 type: boolean
- *                 example: true
+ *               status:
+ *                 type: integer
+ *                 enum: [1, 2, 3, 4]
+ *                 example: 1
+ *                 description: |
+ *                   1 = BOOKED  
+ *                   2 = CANCEL  
+ *                   3 = CLEANING  
+ *                   4 = AVAILABLE
  *     responses:
  *       200:
  *         description: Seat status updated successfully
+ *       400:
+ *         description: Invalid seat status
+ *       404:
+ *         description: Seat not found
  */
 router.put("/:seatId", authenticate, updateSeatStatus);
 

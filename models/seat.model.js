@@ -1,6 +1,5 @@
 import { DataTypes } from "sequelize";
 import { sequelize } from "../config/db.js";
-
 const Seat = sequelize.define(
   "Seat",
   {
@@ -9,23 +8,36 @@ const Seat = sequelize.define(
       primaryKey: true,
       autoIncrement: true,
     },
+
     table_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+
     seat_number: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
-    is_booked: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
+    reservation_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    status: {
+      type: DataTypes.INTEGER, // ✅ BOOLEAN → INTEGER
+      allowNull: false,
+      defaultValue: 4, // 0 = AVAILABLE
+      comment: "4=AVAILABLE,1=BOOKED,2=CANCEL,3=CLEANING",
     },
   },
   {
     tableName: "seats",
     timestamps: true,
-    indexes: [{ unique: true, fields: ["table_id", "seat_number"] }],
+    indexes: [
+      {
+        unique: true,
+        fields: ["table_id", "seat_number"],
+      },
+    ],
   }
 );
 

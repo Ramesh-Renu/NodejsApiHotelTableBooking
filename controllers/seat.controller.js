@@ -1,6 +1,16 @@
 import Seat from "../models/seat.model.js";
 import Table from "../models/table.model.js";
 
+const SEAT_STATUS = {
+  BOOKED: 1,
+  CANCEL: 2,
+  CLEANING: 3,
+  AVAILABLE: 4,
+};
+
+/**
+ * ADD seats to an existing table
+ */
 export const addSeatsToTable = async (req, res) => {
   try {
     const { tableId } = req.params;
@@ -34,7 +44,7 @@ export const addSeatsToTable = async (req, res) => {
       seats.push({
         table_id: tableId,
         seat_number: startNumber + i,
-        is_booked: false,
+        status: SEAT_STATUS.AVAILABLE, // ✅ 4
       });
     }
 
@@ -54,12 +64,14 @@ export const addSeatsToTable = async (req, res) => {
   }
 };
 
+/**
+ * REMOVE seats from table (only AVAILABLE seats)
+ */
 export const removeSeatsFromTable = async (req, res) => {
   try {
     const { tableId } = req.params;
     const { seatIds } = req.body;
 
-    // ✅ Validate seatIds
     if (!Array.isArray(seatIds) || seatIds.length === 0) {
       return res.status(400).json({
         success: false,
@@ -67,7 +79,6 @@ export const removeSeatsFromTable = async (req, res) => {
       });
     }
 
-    // 🔍 Fetch seats belonging to this table
     const seats = await Seat.findAll({
       where: {
         id: seatIds,
@@ -75,7 +86,6 @@ export const removeSeatsFromTable = async (req, res) => {
       },
     });
 
-    // ❌ Invalid seat IDs or wrong table
     if (seats.length !== seatIds.length) {
       return res.status(400).json({
         success: false,
@@ -83,17 +93,19 @@ export const removeSeatsFromTable = async (req, res) => {
       });
     }
 
-    // ❌ Prevent removing booked seats
-    const bookedSeats = seats.filter((seat) => seat.is_booked);
-    if (bookedSeats.length > 0) {
+    // ❌ Prevent removing non-AVAILABLE seats
+    const blockedSeats = seats.filter(
+      (seat) => seat.status !== SEAT_STATUS.AVAILABLE
+    );
+
+    if (blockedSeats.length > 0) {
       return res.status(400).json({
         success: false,
-        message: "Cannot remove booked seats",
-        bookedSeatIds: bookedSeats.map((s) => s.id),
+        message: "Only AVAILABLE seats can be removed",
+        blockedSeatIds: blockedSeats.map((s) => s.id),
       });
     }
 
-    // 🗑 Remove seats
     await Seat.destroy({
       where: {
         id: seatIds,
@@ -115,44 +127,57 @@ export const removeSeatsFromTable = async (req, res) => {
   }
 };
 
+/**
+ * CREATE seats for a table (fresh)
+ */
 export const createSeatsForTable = async (req, res) => {
   try {
     const { tableId } = req.params;
     const { seatCount } = req.body;
 
     if (!seatCount || seatCount <= 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "seatCount must be greater than 0" });
+      return res.status(400).json({
+        success: false,
+        message: "seatCount must be greater than 0",
+      });
     }
 
     const table = await Table.findByPk(tableId);
     if (!table) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Table not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Table not found",
+      });
     }
 
     const seats = [];
     for (let i = 1; i <= seatCount; i++) {
-      seats.push({ table_id: tableId, seat_number: i });
+      seats.push({
+        table_id: tableId,
+        seat_number: i,
+        status: SEAT_STATUS.AVAILABLE, // ✅ 4
+      });
     }
 
     const created = await Seat.bulkCreate(seats);
 
-    res
-      .status(201)
-      .json({
-        success: true,
-        message: "Seats created successfully",
-        data: created,
-      });
+    res.status(201).json({
+      success: true,
+      message: "Seats created successfully",
+      data: created,
+    });
   } catch (error) {
     console.error("Create seats error:", error);
-    res.status(500).json({ success: false, message: "Failed to create seats" });
+    res.status(500).json({
+      success: false,
+      message: "Failed to create seats",
+    });
   }
 };
 
+/**
+ * GET seats by table
+ */
 export const getSeatsByTable = async (req, res) => {
   try {
     const { tableId } = req.params;
@@ -165,32 +190,50 @@ export const getSeatsByTable = async (req, res) => {
     res.json({ success: true, data: seats });
   } catch (error) {
     console.error("Get seats error:", error);
-    res.status(500).json({ success: false, message: "Failed to fetch seats" });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch seats",
+    });
   }
 };
 
+/**
+ * UPDATE seat status
+ */
 export const updateSeatStatus = async (req, res) => {
   try {
     const { seatId } = req.params;
-    const { is_booked } = req.body;
+    const { status } = req.body;
+
+    if (!Object.values(SEAT_STATUS).includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid seat status",
+      });
+    }
 
     const seat = await Seat.findByPk(seatId);
-    if (!seat)
-      return res
-        .status(404)
-        .json({ success: false, message: "Seat not found" });
+    if (!seat) {
+      return res.status(404).json({
+        success: false,
+        message: "Seat not found",
+      });
+    }
 
-    if (typeof is_booked === "boolean") seat.is_booked = is_booked;
+    seat.status = status;
     await seat.save();
 
     res.json({
       success: true,
-      message: "Seat updated successfully",
+      message: "Seat status updated successfully",
       data: seat,
     });
   } catch (error) {
     console.error("Update seat error:", error);
-    res.status(500).json({ success: false, message: "Failed to update seat" });
+    res.status(500).json({
+      success: false,
+      message: "Failed to update seat",
+    });
   }
 };
 

@@ -2,10 +2,17 @@ import HotelTable from "../models/hotelTable.model.js";
 import Floor from "../models/floor.model.js";
 import Table from "../models/table.model.js";
 import Seat from "../models/seat.model.js";
+import Reservation from "../models/reservation.model.js";
+
+const SEAT_STATUS = {
+  BOOKED: 1,
+  CANCEL: 2,
+  CLEANING: 3,
+  AVAILABLE: 4,
+};
 
 /**
- * CREATE tables for a hotel
- * Admin creates actual tables based on count
+ * CREATE tables for a hotel (Admin)
  */
 export const createTablesForHotel = async (req, res) => {
   try {
@@ -19,7 +26,6 @@ export const createTablesForHotel = async (req, res) => {
       });
     }
 
-    // 🔎 Check hotel exists
     const hotel = await HotelTable.findByPk(hotelTableId);
     if (!hotel) {
       return res.status(404).json({
@@ -28,12 +34,8 @@ export const createTablesForHotel = async (req, res) => {
       });
     }
 
-    // 🔎 Check floor exists & belongs to hotel
     const floor = await Floor.findOne({
-      where: {
-        id: floorId,
-        hotel_table_id: hotelTableId,
-      },
+      where: { id: floorId, hotel_table_id: hotelTableId },
     });
 
     if (!floor) {
@@ -43,18 +45,14 @@ export const createTablesForHotel = async (req, res) => {
       });
     }
 
-    // 🔥 Find last table number FOR THIS FLOOR
+    // 🔥 last table number per floor
     const lastTable = await Table.findOne({
-      where: {
-        // hotel_table_id: hotelTableId,
-        floor_id: floorId,
-      },
+      where: { floor_id: floorId },
       order: [["table_number", "DESC"]],
     });
 
     const startNumber = lastTable ? lastTable.table_number + 1 : 1;
 
-    // 🔢 Prepare new tables
     const tables = [];
     for (let i = 0; i < tableCount; i++) {
       tables.push({
@@ -64,17 +62,15 @@ export const createTablesForHotel = async (req, res) => {
       });
     }
 
-    const createdTables = await Table.bulkCreate(tables);
+    await Table.bulkCreate(tables);
 
     return res.status(201).json({
       success: true,
       message: "Tables created successfully",
-      // data: createdTables,
     });
   } catch (error) {
     console.error("Create tables error:", error);
 
-    // 🔴 Only duplicate table number
     if (error.name === "SequelizeUniqueConstraintError") {
       return res.status(409).json({
         success: false,
@@ -82,7 +78,6 @@ export const createTablesForHotel = async (req, res) => {
       });
     }
 
-    // 🔴 Foreign key / not-null / other DB errors
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to create tables",
@@ -97,6 +92,7 @@ export const getTablesByHotel = async (req, res) => {
   try {
     const { hotelTableId } = req.params;
 
+    /* ---------------- FETCH HOTEL STRUCTURE ---------------- */
     const hotel = await HotelTable.findByPk(hotelTableId, {
       include: [
         {
@@ -125,29 +121,61 @@ export const getTablesByHotel = async (req, res) => {
       });
     }
 
+    /* ---------------- FETCH RESERVATIONS ---------------- */
+    const reservations = await Reservation.findAll({
+      where: { hotel_id: hotelTableId },
+      attributes: ["user_id", "seat_status"],
+    });
+
+    /* ---------------- BUILD seat_id → user_id MAP ---------------- */
+    const seatUserMap = new Map();
+
+    for (const r of reservations) {
+      const seatStatus =
+        typeof r.seat_status === "string"
+          ? JSON.parse(r.seat_status)
+          : r.seat_status;
+
+      if (!Array.isArray(seatStatus)) continue;
+
+      for (const t of seatStatus) {
+        if (Array.isArray(t.seat_ids)) {
+          for (const seatId of t.seat_ids) {
+            seatUserMap.set(Number(seatId), r.user_id); // ✅ FIX
+          }
+        }
+      }
+    }
+
+    /* ---------------- BUILD RESPONSE ---------------- */
     const floorsData = hotel.floors.map((floor) => {
       let totalSeats = 0;
       let availableSeats = 0;
       let availableTables = 0;
 
       const tables = floor.tables.map((table) => {
-        let tableHasFreeSeat = false;
+        let tableHasAvailableSeat = false;
 
         const seats = table.seats.map((seat) => {
           totalSeats++;
-          if (!seat.is_booked) {
-            availableSeats++;
-            tableHasFreeSeat = true;
-          }
 
+          if (seat.status === SEAT_STATUS.AVAILABLE) {
+            availableSeats++;
+            tableHasAvailableSeat = true;
+          }
           return {
             seat_id: seat.id,
             seat_number: seat.seat_number,
-            is_booked: seat.is_booked,
+            status: seat.status,
+            reservation_id: seat.reservation_id,
+            user_id:
+              seat.status === SEAT_STATUS.BOOKED
+                ? seatUserMap.get(Number(seat.id)) || null
+                : null,
           };
         });
 
-        if (tableHasFreeSeat) {
+        if (tableHasAvailableSeat) {
           availableTables++;
         }
 
@@ -160,7 +188,6 @@ export const getTablesByHotel = async (req, res) => {
 
       return {
         floor_id: floor.id,
-        // floor_number: floor.floor_number,
         tables,
         number_of_tables: floor.tables.length,
         number_of_seats: totalSeats,
@@ -199,6 +226,21 @@ export const deleteTable = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Table not found",
+      });
+    }
+
+    // 🚫 Prevent deleting table with BOOKED or CLEANING seats
+    const blockedSeats = await Seat.count({
+      where: {
+        table_id: tableId,
+        status: [SEAT_STATUS.BOOKED, SEAT_STATUS.CLEANING],
+      },
+    });
+
+    if (blockedSeats > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot delete table with booked or cleaning seats",
       });
     }
 

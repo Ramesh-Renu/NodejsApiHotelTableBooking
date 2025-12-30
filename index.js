@@ -15,6 +15,7 @@ import floorRoutes from "./routes/floor.routes.js";
 import tableRoutes from "./routes/table.routes.js";
 import seatRoutes from "./routes/seat.routes.js";
 import reservationRoutes from "./routes/reservation.routes.js";
+import seatsStatusRoutes from "./routes/seatStatusMaster.routes.js";
 import areaRoutes from "./routes/area.routes.js";
 import locationRoutes from "./routes/location.routes.js";
 import "./models/index.js";
@@ -29,7 +30,6 @@ app.use(cors());
 app.use(express.json()); // ✅ FIXED: Parse JSON bodies
 
 /* Optional but recommended */
-app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
 app.use("/api/users", userRoutes);
@@ -41,6 +41,8 @@ app.use("/api/seats", seatRoutes);
 app.use("/api/reservations", reservationRoutes);
 app.use("/api/areas", areaRoutes);
 app.use("/api/locations", locationRoutes);
+app.use("/api/seat-status", seatsStatusRoutes);
+
 
 /* Swagger */
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

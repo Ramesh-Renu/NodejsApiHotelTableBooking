@@ -1,10 +1,10 @@
 {
   "name": "api",
   "version": "1.0.0",
-  "description": "",
+  "description": "Hotel Table Booking System",
   "main": "index.js",
   "keywords": [],
-  "author": "",
+  "author": "Ramesh R",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.13.2",
