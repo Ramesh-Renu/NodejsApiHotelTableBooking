@@ -2,7 +2,7 @@ import Reservation from "../models/reservation.model.js";
 import Seat from "../models/seat.model.js";
 import { sequelize } from "../config/db.js";
 import { SEAT_STATUS } from "../utils/seatStatus.js"; 
-
+import CancelReservation from "../models/CancelledReservation.js";
 /**
  * CREATE RESERVATION
  */
@@ -105,10 +105,11 @@ export const createReservation = async (req, res) => {
     const reservationId = reservation.id;
 
     /* ---------------- UPDATE SEATS ---------------- */
-    const [affectedRows] = await Seat.update(
+    await Seat.update(
       {
         status: SEAT_STATUS.BOOKED,
         reservation_id: reservationId,
+        isActive: true
       },
       {
         where: {
@@ -118,7 +119,6 @@ export const createReservation = async (req, res) => {
         transaction,
       }
     );
-console.log("Seat update count:", affectedRows);
     /* ---------------- COMMIT ---------------- */
     await transaction.commit();
 
@@ -139,9 +139,9 @@ console.log("Seat update count:", affectedRows);
     });
   }
 };
+
 export const updateReservation = async (req, res) => {
   const transaction = await sequelize.transaction();
-
   try {
     const { reservationId } = req.params;
     const { cancel_seats } = req.body;
@@ -248,6 +248,7 @@ export const updateReservation = async (req, res) => {
       {
         status: SEAT_STATUS.AVAILABLE,
         reservation_id: null,            // ✅ REQUIRED
+        isActive: true
       },
       {
         where: {
@@ -276,7 +277,6 @@ export const updateReservation = async (req, res) => {
   }
 };
 
-
 export const getReservationsByHotel = async (req, res) => {
   try {
     const { hotelId } = req.params;
@@ -298,27 +298,58 @@ export const getReservationsByHotel = async (req, res) => {
   }
 };
 
-export const cancelReservation = async (req, res) => {
+export const cancelReservationSeats = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
   try {
     const { id } = req.params;
 
-    const reservation = await Reservation.findByPk(id);
-
+    const reservation = await Reservation.findByPk(id, { transaction });
     if (!reservation) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: "Reservation not found",
       });
     }
 
-    reservation.status = "CANCELLED";
-    await reservation.save();
+    // 🔓 Release all seats
+    await Seat.update(
+      {
+        status: SEAT_STATUS.AVAILABLE,
+        reservation_id: null,
+        isActive: true,
+      },
+      {
+        where: { reservation_id: id },
+        transaction,
+      }
+    );
+
+    // 🧾 Save full cancellation snapshot
+    await CancelReservation.create(
+      {
+        reservation_id: id,
+        seat_status: reservation.seat_status,
+        cancelled_at: new Date(),
+      },
+      { transaction }
+    );
+
+    // ❌ Cancel reservation
+    await reservation.update(
+      { status: "CANCELLED" },
+      { transaction }
+    );
+
+    await transaction.commit();
 
     res.json({
       success: true,
       message: "Reservation cancelled successfully",
     });
   } catch (error) {
+    await transaction.rollback();
     res.status(500).json({
       success: false,
       message: error.message,

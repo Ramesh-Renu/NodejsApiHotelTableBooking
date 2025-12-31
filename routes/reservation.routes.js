@@ -2,7 +2,7 @@ import express from "express";
 import {
   createReservation,
   getReservationsByHotel,
-  cancelReservation,
+  cancelReservationSeats,
   updateReservation
 } from "../controllers/reservation.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
@@ -259,6 +259,6 @@ router.get("/hotel/:hotelId", getReservationsByHotel);
  *       500:
  *         description: Server error
  */
-router.delete("/:id/cancel", cancelReservation);
+router.delete("/:id/cancel", cancelReservationSeats);
 
 export default router;

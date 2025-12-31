@@ -1,5 +1,6 @@
 import Seat from "../models/seat.model.js";
 import Table from "../models/table.model.js";
+import { sequelize } from "../config/db.js";
 
 const SEAT_STATUS = {
   BOOKED: 1,
@@ -12,6 +13,8 @@ const SEAT_STATUS = {
  * ADD seats to an existing table
  */
 export const addSeatsToTable = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
   try {
     const { tableId } = req.params;
     const { seatCount } = req.body;
@@ -23,43 +26,52 @@ export const addSeatsToTable = async (req, res) => {
       });
     }
 
-    const table = await Table.findByPk(tableId);
+    // ✅ Check table exists
+    const table = await Table.findByPk(tableId, { transaction });
     if (!table) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: "Table not found",
       });
     }
 
-    // 🔍 find last seat number
+    // 🔍 Find current max seat number
     const lastSeat = await Seat.findOne({
       where: { table_id: tableId },
       order: [["seat_number", "DESC"]],
+      attributes: ["seat_number"],
+      transaction,
     });
 
-    const startNumber = lastSeat ? lastSeat.seat_number + 1 : 1;
+    const startSeatNumber = lastSeat ? lastSeat.seat_number + 1 : 1;
 
+    // ➕ Add ONLY new seats
     const seats = [];
     for (let i = 0; i < seatCount; i++) {
       seats.push({
         table_id: tableId,
-        seat_number: startNumber + i,
-        status: SEAT_STATUS.AVAILABLE, // ✅ 4
+        seat_number: startSeatNumber + i,
+        status: 4,
       });
     }
 
-    const createdSeats = await Seat.bulkCreate(seats);
+    await Seat.bulkCreate(seats, { transaction });
+    await transaction.commit();
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: "Seats added successfully",
-      data: createdSeats,
+      message: "Additional seats added successfully",
+      added: seats.length,
     });
   } catch (error) {
+    await transaction.rollback();
     console.error("Add seats error:", error);
-    res.status(500).json({
+
+    return res.status(500).json({
       success: false,
       message: "Failed to add seats",
+      error: error.message,
     });
   }
 };
@@ -68,11 +80,19 @@ export const addSeatsToTable = async (req, res) => {
  * REMOVE seats from table (only AVAILABLE seats)
  */
 export const removeSeatsFromTable = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
   try {
     const { tableId } = req.params;
-    const { seatIds } = req.body;
+
+    const seatIds =
+      req.body?.seatIds ??
+      (req.query?.seatIds
+        ? req.query.seatIds.split(",").map(Number)
+        : []);
 
     if (!Array.isArray(seatIds) || seatIds.length === 0) {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
         message: "seatIds must be a non-empty array",
@@ -83,35 +103,46 @@ export const removeSeatsFromTable = async (req, res) => {
       where: {
         id: seatIds,
         table_id: tableId,
+        isActive: true,
       },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
     });
 
     if (seats.length !== seatIds.length) {
-      return res.status(400).json({
+      await transaction.rollback();
+      return res.status(200).json({
         success: false,
-        message: "One or more seatIds are invalid or not linked to this table",
+        message: "Invalid seatIds or seats not linked to this table",
       });
     }
 
-    // ❌ Prevent removing non-AVAILABLE seats
     const blockedSeats = seats.filter(
       (seat) => seat.status !== SEAT_STATUS.AVAILABLE
     );
 
     if (blockedSeats.length > 0) {
-      return res.status(400).json({
+      await transaction.rollback();
+      return res.status(200).json({
         success: false,
         message: "Only AVAILABLE seats can be removed",
         blockedSeatIds: blockedSeats.map((s) => s.id),
       });
     }
 
-    await Seat.destroy({
-      where: {
-        id: seatIds,
-        table_id: tableId,
-      },
-    });
+    // ✅ Soft delete
+    await Seat.update(
+      { isActive: false },
+      {
+        where: {
+          id: seatIds,
+          table_id: tableId,
+        },
+        transaction,
+      }
+    );
+
+    await transaction.commit();
 
     return res.json({
       success: true,
@@ -119,6 +150,7 @@ export const removeSeatsFromTable = async (req, res) => {
       removedSeatIds: seatIds,
     });
   } catch (error) {
+    await transaction.rollback();
     console.error("Remove seats error:", error);
     return res.status(500).json({
       success: false,

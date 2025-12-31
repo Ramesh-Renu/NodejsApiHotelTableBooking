@@ -26,6 +26,7 @@ Table.belongsTo(Floor, {
 /* Table → Seat */
 Table.hasMany(Seat, {
   foreignKey: "table_id",
+  onDelete: "CASCADE",
   as: "seats",
 });
 Seat.belongsTo(Table, {

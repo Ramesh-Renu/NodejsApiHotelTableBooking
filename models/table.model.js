@@ -19,7 +19,10 @@ const Table = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
     },
-
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
     table_number: {
       type: DataTypes.INTEGER,
       allowNull: false,

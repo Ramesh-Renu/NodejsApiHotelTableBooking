@@ -87,6 +87,10 @@ export const createTablesForHotel = async (req, res) => {
 
 /**
  * GET all tables of a hotel (floor → table → seat)
+ * - Only ACTIVE floors
+ * - Only ACTIVE tables
+ * - Only ACTIVE seats
+ * - Availability based on seat.status
  */
 export const getTablesByHotel = async (req, res) => {
   try {
@@ -98,14 +102,20 @@ export const getTablesByHotel = async (req, res) => {
         {
           model: Floor,
           as: "floors",
+          where: { isActive: true },              // ✅ ACTIVE FLOORS ONLY
+          required: false,
           include: [
             {
               model: Table,
               as: "tables",
+              where: { isActive: true },           // ✅ ACTIVE TABLES ONLY
+              required: false,
               include: [
                 {
                   model: Seat,
                   as: "seats",
+                  where: { isActive: true },       // ✅ ACTIVE SEATS ONLY
+                  required: false,
                 },
               ],
             },
@@ -141,32 +151,37 @@ export const getTablesByHotel = async (req, res) => {
       for (const t of seatStatus) {
         if (Array.isArray(t.seat_ids)) {
           for (const seatId of t.seat_ids) {
-            seatUserMap.set(Number(seatId), r.user_id); // ✅ FIX
+            seatUserMap.set(Number(seatId), r.user_id);
           }
         }
       }
     }
 
     /* ---------------- BUILD RESPONSE ---------------- */
-    const floorsData = hotel.floors.map((floor) => {
+    const floorsData = (hotel.floors || []).map((floor) => {
       let totalSeats = 0;
       let availableSeats = 0;
       let availableTables = 0;
 
-      const tables = floor.tables.map((table) => {
+      const tables = (floor.tables || []).map((table) => {
         let tableHasAvailableSeat = false;
 
-        const seats = table.seats.map((seat) => {
+        const seats = (table.seats || []).map((seat) => {
           totalSeats++;
 
-          if (seat.status === SEAT_STATUS.AVAILABLE) {
+          const isAvailable =
+            seat.status === SEAT_STATUS.AVAILABLE;
+
+          if (isAvailable) {
             availableSeats++;
             tableHasAvailableSeat = true;
           }
+
           return {
             seat_id: seat.id,
             seat_number: seat.seat_number,
             status: seat.status,
+            isActive: seat.isActive,
             reservation_id: seat.reservation_id,
             user_id:
               seat.status === SEAT_STATUS.BOOKED
@@ -182,15 +197,18 @@ export const getTablesByHotel = async (req, res) => {
         return {
           table_id: table.id,
           table_number: table.table_number,
+          isActive: table.isActive,
           seats,
         };
       });
 
       return {
         floor_id: floor.id,
+        floor_number: floor.floor_number,
+        isActive: floor.isActive,
         tables,
-        number_of_tables: floor.tables.length,
-        number_of_seats: totalSeats,
+        number_of_tables: tables.length,        // ✅ ACTIVE tables only
+        number_of_seats: totalSeats,             // ✅ ACTIVE seats only
         available_of_tables: availableTables,
         available_of_seats: availableSeats,
       };

@@ -22,6 +22,10 @@ const Seat = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
     status: {
       type: DataTypes.INTEGER, // ✅ BOOLEAN → INTEGER
       allowNull: false,
