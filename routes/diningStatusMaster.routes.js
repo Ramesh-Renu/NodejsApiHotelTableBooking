@@ -1,23 +1,23 @@
 import express from "express";
 import {
-  createSeatStatus,
-  getAllSeatStatuses,
-} from "../controllers/seatStatusMaster.controller.js";
+  createDiningStatus,
+  getAllDiningStatuses,
+} from "../controllers/diningStatusMaster.controller.js";
 
 const router = express.Router();
 
 /**
  * @swagger
  * tags:
- *   name: Seat Status Master
- *   description: Seat status master management
+ *   name: Dining Status Master
+ *   description: Dining status master management
  */
 
 /**
  * @swagger
  * components:
  *   schemas:
- *     SeatStatusMaster:
+ *     DiningStatusMaster:
  *       type: object
  *       required:
  *         - status_id
@@ -42,10 +42,10 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/seat-status:
+ * /api/dining-status:
  *   post:
- *     summary: Create seat status
- *     tags: [Seat Status Master]
+ *     summary: Create dining status
+ *     tags: [Dining Status Master]
  *     requestBody:
  *       required: true
  *       content:
@@ -64,30 +64,30 @@ const router = express.Router();
  *                 example: BOOKED
  *     responses:
  *       201:
- *         description: Seat status created
+ *         description: Dining status created
  *       409:
  *         description: Duplicate status
  *       500:
  *         description: Server error
  */
-router.post("/", createSeatStatus);
+router.post("/", createDiningStatus);
 
 /**
  * @swagger
- * /api/seat-status:
+ * /api/dining-status:
  *   get:
- *     summary: Get all seat statuses
- *     tags: [Seat Status Master]
+ *     summary: Get all dining statuses
+ *     tags: [Dining Status Master]
  *     responses:
  *       200:
- *         description: List of seat statuses
+ *         description: List of dining statuses
  *         content:
  *           application/json:
  *             schema:
  *               type: array
  *               items:
- *                 $ref: '#/components/schemas/SeatStatusMaster'
+ *                 $ref: '#/components/schemas/DiningStatusMaster'
  */
-router.get("/", getAllSeatStatuses);
+router.get("/", getAllDiningStatuses);
 
 export default router;

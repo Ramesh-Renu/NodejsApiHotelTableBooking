@@ -102,19 +102,19 @@ export const getTablesByHotel = async (req, res) => {
         {
           model: Floor,
           as: "floors",
-          where: { isActive: true },              // ✅ ACTIVE FLOORS ONLY
+          where: { isActive: true }, // ✅ ACTIVE FLOORS ONLY
           required: false,
           include: [
             {
               model: Table,
               as: "tables",
-              where: { isActive: true },           // ✅ ACTIVE TABLES ONLY
+              where: { isActive: true }, // ✅ ACTIVE TABLES ONLY
               required: false,
               include: [
                 {
                   model: Seat,
                   as: "seats",
-                  where: { isActive: true },       // ✅ ACTIVE SEATS ONLY
+                  where: { isActive: true }, // ✅ ACTIVE SEATS ONLY
                   required: false,
                 },
               ],
@@ -158,61 +158,62 @@ export const getTablesByHotel = async (req, res) => {
     }
 
     /* ---------------- BUILD RESPONSE ---------------- */
-    const floorsData = (hotel.floors || []).map((floor) => {
-      let totalSeats = 0;
-      let availableSeats = 0;
-      let availableTables = 0;
+    const floorsData = (hotel.floors || [])
+      .sort((a, b) => a.id - b.id) // ASC → small ID first
+      .map((floor) => {
+        let totalSeats = 0;
+        let availableSeats = 0;
+        let availableTables = 0;
 
-      const tables = (floor.tables || []).map((table) => {
-        let tableHasAvailableSeat = false;
+        const tables = (floor.tables || []).map((table) => {
+          let tableHasAvailableSeat = false;
 
-        const seats = (table.seats || []).map((seat) => {
-          totalSeats++;
+          const seats = (table.seats || []).map((seat) => {
+            totalSeats++;
 
-          const isAvailable =
-            seat.status === SEAT_STATUS.AVAILABLE;
+            const isAvailable = seat.status === SEAT_STATUS.AVAILABLE;
 
-          if (isAvailable) {
-            availableSeats++;
-            tableHasAvailableSeat = true;
+            if (isAvailable) {
+              availableSeats++;
+              tableHasAvailableSeat = true;
+            }
+
+            return {
+              seat_id: seat.id,
+              seat_number: seat.seat_number,
+              status: seat.status,
+              isActive: seat.isActive,
+              reservation_id: seat.reservation_id,
+              user_id:
+                seat.status === SEAT_STATUS.BOOKED
+                  ? seatUserMap.get(Number(seat.id)) || null
+                  : null,
+            };
+          });
+
+          if (tableHasAvailableSeat) {
+            availableTables++;
           }
 
           return {
-            seat_id: seat.id,
-            seat_number: seat.seat_number,
-            status: seat.status,
-            isActive: seat.isActive,
-            reservation_id: seat.reservation_id,
-            user_id:
-              seat.status === SEAT_STATUS.BOOKED
-                ? seatUserMap.get(Number(seat.id)) || null
-                : null,
+            table_id: table.id,
+            table_number: table.table_number,
+            isActive: table.isActive,
+            seats,
           };
         });
 
-        if (tableHasAvailableSeat) {
-          availableTables++;
-        }
-
         return {
-          table_id: table.id,
-          table_number: table.table_number,
-          isActive: table.isActive,
-          seats,
+          floor_id: floor.id,
+          floor_number: floor.floor_number,
+          isActive: floor.isActive,
+          tables,
+          number_of_tables: tables.length,
+          number_of_seats: totalSeats,
+          available_of_tables: availableTables,
+          available_of_seats: availableSeats,
         };
       });
-
-      return {
-        floor_id: floor.id,
-        floor_number: floor.floor_number,
-        isActive: floor.isActive,
-        tables,
-        number_of_tables: tables.length,        // ✅ ACTIVE tables only
-        number_of_seats: totalSeats,             // ✅ ACTIVE seats only
-        available_of_tables: availableTables,
-        available_of_seats: availableSeats,
-      };
-    });
 
     return res.json({
       success: true,

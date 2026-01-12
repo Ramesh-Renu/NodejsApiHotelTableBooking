@@ -2,8 +2,10 @@ import express from "express";
 import {
   createReservation,
   getReservationsByHotel,
+  getReservationsByUser,
   cancelReservationSeats,
-  updateReservation
+  updateReservation,
+  updateDiningStatus
 } from "../controllers/reservation.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 
@@ -40,7 +42,7 @@ const router = express.Router();
  *         - seat_status
  *         - customer_name
  *         - customer_mobile
- *         - reservation_date
+ *         - dining_date
  *         - reservation_time
  *       properties:
  *         hotel_id:
@@ -59,7 +61,7 @@ const router = express.Router();
  *         customer_mobile:
  *           type: string
  *           example: "1234567891"
- *         reservation_date:
+ *         dining_date:
  *           type: string
  *           format: date
  *           example: 2025-12-30
@@ -77,9 +79,6 @@ const router = express.Router();
  *           type: integer
  *         floor_id:
  *           type: integer
- *         booking_date:
- *           type: string
- *           format: date
  *         start_time:
  *           type: string
  *           format: time
@@ -87,7 +86,7 @@ const router = express.Router();
  *           type: array
  *           items:
  *             $ref: '#/components/schemas/SeatStatus'
- *         reservation_date:
+ *         dining_date:
  *           type: string
  *           format: date-time
  *         updated_at:
@@ -241,6 +240,37 @@ router.get("/hotel/:hotelId", getReservationsByHotel);
 
 /**
  * @swagger
+ * /api/reservations/user/{userId}:
+ *   get:
+ *     summary: Get all reservations by userId
+ *     tags: [Reservations]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of reservations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReservationResponse'
+ *       500:
+ *         description: Server error
+ */
+router.get("/user/:userId", getReservationsByUser);
+
+/**
+ * @swagger
  * /api/reservations/{id}/cancel:
  *   delete:
  *     summary: Cancel (delete) a reservation
@@ -260,5 +290,66 @@ router.get("/hotel/:hotelId", getReservationsByHotel);
  *         description: Server error
  */
 router.delete("/:id/cancel", cancelReservationSeats);
+
+/**
+ * @swagger
+ * /api/reservations/{reservationId}/dining-status:
+ *   patch:
+ *     summary: Update the dining status of a reservation
+ *     description: Change the dining_status field for a reservation record.
+ *     tags: [Reservations]
+ *     parameters:
+ *       - in: path
+ *         name: reservationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the reservation to update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - dining_status
+ *             properties:
+ *               dining_status:
+ *                 type: integer
+ *                 example: 2
+ *                 description: >
+ *                   New dining status value
+ *                   1 = Confirmed
+ *                   2 = Seated
+ *                   3 = Completed
+ *                   4 = Cancelled
+ *                   5 = Pending
+ *     responses:
+ *       200:
+ *         description: Dining status updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     reservationId:
+ *                       type: integer
+ *                     dining_status:
+ *                       type: integer
+ *       400:
+ *         description: Invalid input — missing or invalid dining status
+ *       404:
+ *         description: Reservation not found
+ *       500:
+ *         description: Server error
+ */
+router.patch("/:reservationId/dining-status", updateDiningStatus);
 
 export default router;

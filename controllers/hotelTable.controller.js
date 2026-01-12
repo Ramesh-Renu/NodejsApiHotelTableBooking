@@ -8,7 +8,6 @@ import Location from "../models/location.model.js";
 import { Op } from "sequelize";
 import { sequelize } from "../config/db.js";
 
-
 const SEAT_STATUS = {
   BOOKED: 1,
   CANCEL: 2,
@@ -273,24 +272,57 @@ export const getHotelTableById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const data = await HotelTable.findByPk(id);
+    const hotel = await HotelTable.findByPk(id);
 
-    if (!data) {
+    if (!hotel) {
       return res.status(404).json({
         success: false,
         message: "Hotel table not found",
+        data: [],
       });
     }
 
-    res.json({
+    // ---- floor count ----
+    const floorCount = await Floor.count({
+      where: { hotel_table_id: hotel.id },
+    });
+
+    // ---- tables and seats ----
+    const tables = await Table.findAll({
+      where: { hotel_table_id: hotel.id },
+      attributes: ["id"],
+    });
+
+    const tableIds = tables.map((t) => t.id);
+
+    const seatCount = tableIds.length
+      ? await Seat.count({ where: { table_id: tableIds } })
+      : 0;
+
+    // ---- build response ----
+    const formatted = {
+      id: hotel.id,
+      hotel_name: hotel.hotel_name,
+      location_id: hotel.location_id,
+      address: hotel.address,
+      tables_per_floor: hotel.tables_per_floor,
+      chairs_per_table: hotel.chairs_per_table,
+      area_id: hotel.area_id,
+      floorCount,
+      tableCount: tables.length,
+      seatCount,
+    };
+
+    return res.json({
       success: true,
-      data,
+      data: formatted, // return array
     });
   } catch (error) {
-    console.error("Fetch by id error:", error);
+    console.error("Fetch by ID error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch hotel table",
+      data: [],
     });
   }
 };
@@ -420,7 +452,7 @@ export const updateHotelTable = async (req, res) => {
         }
       }
     }
-    
+
     /* -----------------------------
          5️⃣ SYNC CHAIRS (SEATS)
   ------------------------------*/

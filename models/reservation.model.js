@@ -4,63 +4,25 @@ import { sequelize } from "../config/db.js";
 const Reservation = sequelize.define(
   "Reservation",
   {
-    id: {
-      type: DataTypes.INTEGER,          // ✅ matches DB
-      autoIncrement: true,
-      primaryKey: true,
-    },
+    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
 
-    hotel_id: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-    },
+    hotel_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    floor_id: { type: DataTypes.INTEGER, allowNull: false },
 
-    floor_id: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-    },
+    start_time: { type: DataTypes.TIME, allowNull: false },
+    end_time: { type: DataTypes.TIME },
 
-    user_id: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-    },
+    seat_status: { type: DataTypes.JSONB, allowNull: false },
 
-    booking_date: {
-      type: DataTypes.DATEONLY,         // date
-      allowNull: false,
-    },
+    dining_date: { type: DataTypes.DATE, allowNull: false },
 
-    start_time: {
-      type: DataTypes.TIME,             // time without time zone
-      allowNull: false,
-    },
-
-    end_time: {
-      type: DataTypes.TIME,
-      allowNull: true,
-    },
-
-    seat_status: {
-      type: DataTypes.JSONB,             // ✅ key change
-      allowNull: false,
-    },
-
-    reservation_date: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: DataTypes.NOW,
-    },
-
-    updated_at: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: DataTypes.NOW,
-    },
+    dining_status: { type: DataTypes.INTEGER, defaultValue: 1 },
   },
   {
     tableName: "reservations",
     timestamps: true,
-    createdAt: "reservation_date",
+    createdAt: "booking_date", // 👈 this fills booking_date
     updatedAt: "updated_at",
   }
 );

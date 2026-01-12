@@ -1,8 +1,12 @@
 import Reservation from "../models/reservation.model.js";
 import Seat from "../models/seat.model.js";
+import HotelTable from "../models/hotelTable.model.js";
+import Floor from "../models/floor.model.js";
 import { sequelize } from "../config/db.js";
-import { SEAT_STATUS } from "../utils/seatStatus.js"; 
+import { SEAT_STATUS } from "../utils/seatStatus.js";
+import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
 import CancelReservation from "../models/CancelledReservation.js";
+import { Op } from "sequelize";
 /**
  * CREATE RESERVATION
  */
@@ -27,7 +31,8 @@ export const createReservation = async (req, res) => {
       seat_status,
       customer_name,
       customer_mobile,
-      reservation_date,
+      // booking_date,
+      dining_date,
       reservation_time,
     } = req.body;
 
@@ -37,7 +42,7 @@ export const createReservation = async (req, res) => {
       !floor_id ||
       !Array.isArray(seat_status) ||
       seat_status.length === 0 ||
-      !reservation_date ||
+      // !booking_date ||
       !reservation_time
     ) {
       await transaction.rollback();
@@ -93,11 +98,12 @@ export const createReservation = async (req, res) => {
         user_id: authUserId,
         hotel_id,
         floor_id,
-        booking_date: reservation_date,
         start_time: reservation_time,
         seat_status,
         customer_name,
         customer_mobile,
+        dining_status: RESERVATION_STATUS.CONFIRMED, // <-- default value
+        dining_date: dining_date,
       },
       { transaction }
     );
@@ -109,7 +115,7 @@ export const createReservation = async (req, res) => {
       {
         status: SEAT_STATUS.BOOKED,
         reservation_id: reservationId,
-        isActive: true
+        isActive: true,
       },
       {
         where: {
@@ -150,7 +156,7 @@ export const updateReservation = async (req, res) => {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: "cancel_seats is required",
+        message: "Cancel Seats is required",
       });
     }
 
@@ -220,7 +226,7 @@ export const updateReservation = async (req, res) => {
     const seatsToCancel = await Seat.findAll({
       where: {
         id: cancelledSeatIds,
-        reservation_id: reservationId,   // ✅ critical check
+        reservation_id: reservationId, // ✅ critical check
         status: SEAT_STATUS.BOOKED,
       },
       transaction,
@@ -247,8 +253,8 @@ export const updateReservation = async (req, res) => {
     await Seat.update(
       {
         status: SEAT_STATUS.AVAILABLE,
-        reservation_id: null,            // ✅ REQUIRED
-        isActive: true
+        reservation_id: null, // ✅ REQUIRED
+        isActive: true,
       },
       {
         where: {
@@ -258,14 +264,23 @@ export const updateReservation = async (req, res) => {
         transaction,
       }
     );
+    // 🧾 Save full cancellation snapshot
+    await CancelReservation.create(
+      {
+        reservation_id: reservationId, // ⭐ FIXED
+        seat_status: cancel_seats,
+        cancelled_at: new Date(),
+      },
+      { transaction }
+    );
 
     await transaction.commit();
 
     return res.json({
       success: true,
       message: "Seats cancelled successfully",
-      cancelled_seat_ids: cancelledSeatIds,
-      updated_seat_status: updatedSeatStatus,
+      // cancelled_seat_ids: cancelledSeatIds,
+      // updated_seat_status: updatedSeatStatus,
     });
   } catch (error) {
     await transaction.rollback();
@@ -283,7 +298,7 @@ export const getReservationsByHotel = async (req, res) => {
 
     const reservations = await Reservation.findAll({
       where: { hotel_id: hotelId },
-      order: [["reservation_date", "ASC"]],
+      order: [["dining_date", "DESC"]],
     });
 
     res.json({
@@ -291,6 +306,51 @@ export const getReservationsByHotel = async (req, res) => {
       data: reservations,
     });
   } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getReservationsByUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+    const reservations = await Reservation.findAll({
+      where: {
+        user_id: userId,
+        seat_status: {
+          [Op.ne]: [], // means seat_status NOT empty array
+        },
+      },
+      order: [["dining_date", "DESC"]],
+      include: [
+        {
+          model: HotelTable,
+          as: "hotel",
+          attributes: ["id", "hotel_name"],
+        },
+        {
+          model: Floor,
+          as: "floor",
+          attributes: ["id", "floor_number"],
+        },
+      ],
+    });
+
+    res.json({
+      success: true,
+      data: [...reservations],
+    });
+  } catch (error) {
+    console.error("Get reservation by user error:", error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -338,7 +398,7 @@ export const cancelReservationSeats = async (req, res) => {
 
     // ❌ Cancel reservation
     await reservation.update(
-      { status: "CANCELLED" },
+      { dining_status: RESERVATION_STATUS.CANCELLED },
       { transaction }
     );
 
@@ -353,6 +413,51 @@ export const cancelReservationSeats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+/**
+ * UPDATE reservation dining status
+ */
+export const updateDiningStatus = async (req, res) => {
+  try {
+    const { reservationId } = req.params;
+    const { dining_status } = req.body;
+
+    // basic validation
+    if (!reservationId || !dining_status) {
+      return res.status(400).json({
+        success: false,
+        message: "reservationId and dining_status are required",
+      });
+    }
+
+    const reservation = await Reservation.findByPk(reservationId);
+
+    if (!reservation) {
+      return res.status(404).json({
+        success: false,
+        message: "Reservation not found",
+      });
+    }
+
+    await Reservation.update(
+      { dining_status },
+      { where: { id: reservationId } }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Dining status updated successfully",
+      data: { reservationId, dining_status },
+    });
+  } catch (error) {
+    console.error("Dining status update error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update dining status",
     });
   }
 };

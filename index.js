@@ -18,6 +18,7 @@ import reservationRoutes from "./routes/reservation.routes.js";
 import seatsStatusRoutes from "./routes/seatStatusMaster.routes.js";
 import areaRoutes from "./routes/area.routes.js";
 import locationRoutes from "./routes/location.routes.js";
+import diningStatusRoutes from "./routes/diningStatusMaster.routes.js";
 import "./models/index.js";
 
 connectDB(); // 👈 MUST BE HERE
@@ -42,6 +43,7 @@ app.use("/api/reservations", reservationRoutes);
 app.use("/api/areas", areaRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/seat-status", seatsStatusRoutes);
+app.use("/api/dining-status", diningStatusRoutes);
 
 
 /* Swagger */

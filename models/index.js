@@ -2,8 +2,11 @@ import HotelTable from "./hotelTable.model.js";
 import Floor from "./floor.model.js";
 import Table from "./table.model.js";
 import Seat from "./seat.model.js";
+import Reservation from "./reservation.model.js";
 
-/* Hotel → Floor */
+/* ==========================================================
+   HOTEL ↔ FLOORS
+   ========================================================== */
 HotelTable.hasMany(Floor, {
   foreignKey: "hotel_table_id",
   as: "floors",
@@ -13,7 +16,9 @@ Floor.belongsTo(HotelTable, {
   as: "hotel",
 });
 
-/* Floor → Table */
+/* ==========================================================
+   FLOOR ↔ TABLES
+   ========================================================== */
 Floor.hasMany(Table, {
   foreignKey: "floor_id",
   as: "tables",
@@ -23,7 +28,9 @@ Table.belongsTo(Floor, {
   as: "floor",
 });
 
-/* Table → Seat */
+/* ==========================================================
+   TABLE ↔ SEATS
+   ========================================================== */
 Table.hasMany(Seat, {
   foreignKey: "table_id",
   onDelete: "CASCADE",
@@ -33,3 +40,29 @@ Seat.belongsTo(Table, {
   foreignKey: "table_id",
   as: "table",
 });
+
+/* ==========================================================
+   RESERVATION ↔ HOTEL
+   ========================================================== */
+Reservation.belongsTo(HotelTable, {
+  foreignKey: "hotel_id",
+  as: "hotel",
+});
+HotelTable.hasMany(Reservation, {
+  foreignKey: "hotel_id",
+  as: "reservations",
+});
+
+/* ==========================================================
+   RESERVATION ↔ FLOOR
+   ========================================================== */
+Reservation.belongsTo(Floor, {
+  foreignKey: "floor_id",
+  as: "floor",
+});
+Floor.hasMany(Reservation, {
+  foreignKey: "floor_id",
+  as: "reservations",
+});
+
+export { HotelTable, Floor, Table, Seat, Reservation };

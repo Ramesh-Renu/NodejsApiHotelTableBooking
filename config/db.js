@@ -11,6 +11,7 @@ export const sequelize = new Sequelize(
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     dialect: "postgres",
+    timezone: "+05:30",     // <-- Force IST for timestamps
     logging: false,
   }
 );
