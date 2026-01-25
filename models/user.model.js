@@ -52,12 +52,16 @@ const RegisterUsersData = sequelize.define(
       type: DataTypes.STRING,
       defaultValue: "user",
     },
+    user_type_id: {
+      type: DataTypes.INTEGER,
+      defaultValue: 2,
+    },
   },
   {
     tableName: "registerUsersData",
     freezeTableName: true,
     timestamps: true,
-  }
+  },
 );
 
 export default RegisterUsersData;

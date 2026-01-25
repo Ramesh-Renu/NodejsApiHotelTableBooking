@@ -4,4 +4,5 @@ export const SEAT_STATUS = Object.freeze({
   BOOKED: 1,
   CANCELLED: 2,
   CLEANING: 3,
+  SEATED: 5,
 });

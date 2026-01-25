@@ -3,14 +3,7 @@ import Floor from "../models/floor.model.js";
 import Table from "../models/table.model.js";
 import Seat from "../models/seat.model.js";
 import Reservation from "../models/reservation.model.js";
-
-const SEAT_STATUS = {
-  BOOKED: 1,
-  CANCEL: 2,
-  CLEANING: 3,
-  AVAILABLE: 4,
-};
-
+import { SEAT_STATUS } from "../utils/seatStatus.js";
 /**
  * CREATE tables for a hotel (Admin)
  */
@@ -177,7 +170,6 @@ export const getTablesByHotel = async (req, res) => {
               availableSeats++;
               tableHasAvailableSeat = true;
             }
-
             return {
               seat_id: seat.id,
               seat_number: seat.seat_number,

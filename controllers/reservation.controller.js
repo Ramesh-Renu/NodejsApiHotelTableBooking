@@ -6,6 +6,8 @@ import { sequelize } from "../config/db.js";
 import { SEAT_STATUS } from "../utils/seatStatus.js";
 import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
 import CancelReservation from "../models/CancelledReservation.js";
+import RegisterUsersData from "../models/user.model.js";
+
 import { Op } from "sequelize";
 /**
  * CREATE RESERVATION
@@ -105,7 +107,7 @@ export const createReservation = async (req, res) => {
         dining_status: RESERVATION_STATUS.CONFIRMED, // <-- default value
         dining_date: dining_date,
       },
-      { transaction }
+      { transaction },
     );
 
     const reservationId = reservation.id;
@@ -123,7 +125,7 @@ export const createReservation = async (req, res) => {
           status: SEAT_STATUS.AVAILABLE, // ✅ critical guard
         },
         transaction,
-      }
+      },
     );
     /* ---------------- COMMIT ---------------- */
     await transaction.commit();
@@ -192,17 +194,17 @@ export const updateReservation = async (req, res) => {
     const updatedSeatStatus = seatStatus
       .map((table) => {
         const cancelForTable = cancel_seats.find(
-          (c) => c.table_id === table.table_id
+          (c) => c.table_id === table.table_id,
         );
 
         if (!cancelForTable) return table;
 
         const remainingSeatIds = table.seat_ids.filter(
-          (id) => !cancelForTable.seat_ids.includes(id)
+          (id) => !cancelForTable.seat_ids.includes(id),
         );
 
         const removedSeatIds = table.seat_ids.filter((id) =>
-          cancelForTable.seat_ids.includes(id)
+          cancelForTable.seat_ids.includes(id),
         );
 
         cancelledSeatIds.push(...removedSeatIds);
@@ -246,7 +248,7 @@ export const updateReservation = async (req, res) => {
       {
         seat_status: updatedSeatStatus,
       },
-      { transaction }
+      { transaction },
     );
 
     /* ---------------- RELEASE SEATS ---------------- */
@@ -262,7 +264,7 @@ export const updateReservation = async (req, res) => {
           reservation_id: reservationId, // ✅ SAFETY
         },
         transaction,
-      }
+      },
     );
     // 🧾 Save full cancellation snapshot
     await CancelReservation.create(
@@ -271,7 +273,7 @@ export const updateReservation = async (req, res) => {
         seat_status: cancel_seats,
         cancelled_at: new Date(),
       },
-      { transaction }
+      { transaction },
     );
 
     await transaction.commit();
@@ -313,23 +315,41 @@ export const getReservationsByHotel = async (req, res) => {
   }
 };
 
-export const getReservationsByUser = async (req, res) => {
+export const getReservations = async (req, res) => {
   try {
-    const { userId } = req.params;
+    // 🔐 Assume user ID comes from auth middleware (JWT/session)
+    const loggedInUserId = req.user.id;
 
-    if (!userId) {
-      return res.status(400).json({
+    // ---------------- GET USER ROLE ----------------
+    const user = await RegisterUsersData.findOne({
+      where: { id: loggedInUserId },
+      attributes: ["id", "user_type_id"],
+    });
+
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: "User ID is required",
+        message: "User not found",
       });
     }
-    const reservations = await Reservation.findAll({
-      where: {
-        user_id: userId,
-        seat_status: {
-          [Op.ne]: [], // means seat_status NOT empty array
-        },
+
+    const { user_type_id } = user;
+
+    // ---------------- WHERE CONDITION ----------------
+    const whereCondition = {
+      seat_status: {
+        [Op.ne]: [],
       },
+    };
+
+    // 👤 Normal users → only their data
+    if (![0, 1].includes(user_type_id)) {
+      whereCondition.user_id = loggedInUserId;
+    }
+
+    // ---------------- FETCH RESERVATIONS ----------------
+    const reservations = await Reservation.findAll({
+      where: whereCondition,
       order: [["dining_date", "DESC"]],
       include: [
         {
@@ -345,19 +365,18 @@ export const getReservationsByUser = async (req, res) => {
       ],
     });
 
-    res.json({
+    return res.json({
       success: true,
-      data: [...reservations],
+      data: reservations,
     });
   } catch (error) {
-    console.error("Get reservation by user error:", error);
-    res.status(500).json({
+    console.error("Get reservations error:", error);
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
   }
 };
-
 export const cancelReservationSeats = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -383,7 +402,7 @@ export const cancelReservationSeats = async (req, res) => {
       {
         where: { reservation_id: id },
         transaction,
-      }
+      },
     );
 
     // 🧾 Save full cancellation snapshot
@@ -393,13 +412,13 @@ export const cancelReservationSeats = async (req, res) => {
         seat_status: reservation.seat_status,
         cancelled_at: new Date(),
       },
-      { transaction }
+      { transaction },
     );
 
     // ❌ Cancel reservation
     await reservation.update(
       { dining_status: RESERVATION_STATUS.CANCELLED },
-      { transaction }
+      { transaction },
     );
 
     await transaction.commit();
@@ -416,43 +435,91 @@ export const cancelReservationSeats = async (req, res) => {
     });
   }
 };
-
 /**
- * UPDATE reservation dining status
+ * UPDATE reservation dining status + sync seat status
  */
 export const updateDiningStatus = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
   try {
     const { reservationId } = req.params;
     const { dining_status } = req.body;
 
-    // basic validation
     if (!reservationId || !dining_status) {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
         message: "reservationId and dining_status are required",
       });
     }
 
-    const reservation = await Reservation.findByPk(reservationId);
+    /* ---------------- FETCH RESERVATION ---------------- */
+    const reservation = await Reservation.findByPk(reservationId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
 
     if (!reservation) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: "Reservation not found",
       });
     }
 
-    await Reservation.update(
-      { dining_status },
-      { where: { id: reservationId } }
-    );
+    /* ---------------- MAP SEAT STATUS ---------------- */
+    const RESERVATION_TO_SEAT_MAP = {
+      [RESERVATION_STATUS.PENDING]: SEAT_STATUS.AVAILABLE, // 1 → 4
+      [RESERVATION_STATUS.CONFIRMED]: SEAT_STATUS.BOOKED, // 2 → 1
+      [RESERVATION_STATUS.SEATED]: SEAT_STATUS.SEATED, // 3 → 5
+      [RESERVATION_STATUS.COMPLETED]: SEAT_STATUS.AVAILABLE, // 4 → 4
+      [RESERVATION_STATUS.CANCELLED]: SEAT_STATUS.AVAILABLE, // 5 → 4
+      [RESERVATION_STATUS.CLEANING]: SEAT_STATUS.CLEANING, // 6 → 3
+    };
+    const seatStatusToUpdate = RESERVATION_TO_SEAT_MAP[dining_status];
+console.log('seatStatusToUpdate',seatStatusToUpdate);
+
+    if (!seatStatusToUpdate) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "Invalid dining status",
+      });
+    }
+
+    /* ---------------- UPDATE RESERVATION ---------------- */
+    await reservation.update({ dining_status }, { transaction });
+
+    /* ---------------- UPDATE SEATS ---------------- */
+    const seatUpdatePayload =
+      seatStatusToUpdate === SEAT_STATUS.AVAILABLE
+        ? {
+            status: SEAT_STATUS.AVAILABLE,
+            reservation_id: null,
+            isActive: true,
+          }
+        : {
+            status: seatStatusToUpdate,
+            isActive: true,
+          };
+
+    await Seat.update(seatUpdatePayload, {
+      where: { reservation_id: reservationId },
+      transaction,
+    });
+
+    await transaction.commit();
 
     return res.status(200).json({
       success: true,
-      message: "Dining status updated successfully",
-      data: { reservationId, dining_status },
+      message: "Dining status and seat status updated successfully",
+      data: {
+        reservationId,
+        dining_status,
+      },
     });
   } catch (error) {
+    await transaction.rollback();
     console.error("Dining status update error:", error);
 
     return res.status(500).json({

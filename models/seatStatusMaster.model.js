@@ -32,13 +32,18 @@ const SeatStatusMaster = sequelize.define(
       allowNull: false,
       defaultValue: DataTypes.NOW,
     },
+    color_code: {
+      type: DataTypes.STRING(20), // VARCHAR(20)
+      allowNull: false,
+      defaultValue: "#000000", // note: 6 digits
+    },
   },
   {
     tableName: "seat_status_master",
     timestamps: true,
     createdAt: "created_at",
     updatedAt: "updated_at",
-  }
+  },
 );
 
 export default SeatStatusMaster;

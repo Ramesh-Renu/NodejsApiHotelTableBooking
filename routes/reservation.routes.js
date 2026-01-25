@@ -2,7 +2,7 @@ import express from "express";
 import {
   createReservation,
   getReservationsByHotel,
-  getReservationsByUser,
+  getReservations,
   cancelReservationSeats,
   updateReservation,
   updateDiningStatus
@@ -240,19 +240,21 @@ router.get("/hotel/:hotelId", getReservationsByHotel);
 
 /**
  * @swagger
- * /api/reservations/user/{userId}:
+ * /api/reservations:
  *   get:
- *     summary: Get all reservations by userId
- *     tags: [Reservations]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: integer
+ *     summary: Get reservations based on logged-in user role
+ *     description: |
+ *       Returns reservations based on internal user role check.
+ *       - Admin / Super Admin → All reservations
+ *       - Normal User → Only their reservations
+ *       - User role is resolved internally from database
+ *     tags:
+ *       - Reservations
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: List of reservations
+ *         description: Reservations fetched successfully
  *         content:
  *           application/json:
  *             schema:
@@ -260,14 +262,52 @@ router.get("/hotel/:hotelId", getReservationsByHotel);
  *               properties:
  *                 success:
  *                   type: boolean
+ *                   example: true
  *                 data:
  *                   type: array
  *                   items:
- *                     $ref: '#/components/schemas/ReservationResponse'
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 15
+ *                       user_id:
+ *                         type: integer
+ *                         example: 4
+ *                       dining_date:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2026-01-25T18:30:00.000Z"
+ *                       dining_status:
+ *                         type: integer
+ *                         example: 2
+ *                       seat_status:
+ *                         type: array
+ *                         example: [1, 2]
+ *                       hotel:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 1
+ *                           hotel_name:
+ *                             type: string
+ *                             example: "Royal Dine"
+ *                       floor:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 2
+ *                           floor_number:
+ *                             type: string
+ *                             example: "First Floor"
+ *       401:
+ *         description: Unauthorized
  *       500:
- *         description: Server error
+ *         description: Internal server error
  */
-router.get("/user/:userId", getReservationsByUser);
+router.get("/", authenticate, getReservations);
 
 /**
  * @swagger
@@ -350,6 +390,6 @@ router.delete("/:id/cancel", cancelReservationSeats);
  *       500:
  *         description: Server error
  */
-router.patch("/:reservationId/dining-status", updateDiningStatus);
+router.patch("/:reservationId/dining-status",authenticate, updateDiningStatus);
 
 export default router;
