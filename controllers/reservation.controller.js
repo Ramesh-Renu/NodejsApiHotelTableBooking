@@ -326,30 +326,48 @@ export const getDashboardSummary = async (req, res) => {
     }
     const isAdmin = [0, 1].includes(user.user_type_id);
     const reservationScope = isAdmin ? {} : { user_id: req.user.id };
-    const now = new Date();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
-    const trendStart = new Date(startOfToday);
-    trendStart.setDate(trendStart.getDate() - 6);
 
-    const [hotels, tables, seats, todayReservations, trendReservations, recent] =
+    const { start_date, end_date } = req.query;
+    let periodStart;
+    let periodEnd;
+
+    if (start_date && end_date) {
+      periodStart = new Date(`${start_date}T00:00:00`);
+      periodEnd = new Date(`${end_date}T23:59:59.999`);
+      if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+        periodStart = null;
+        periodEnd = null;
+      }
+    }
+
+    const now = new Date();
+    if (!periodStart || !periodEnd) {
+      periodEnd = new Date(now);
+      periodEnd.setHours(23, 59, 59, 999);
+      periodStart = new Date(periodEnd);
+      periodStart.setDate(periodStart.getDate() - 6);
+      periodStart.setHours(0, 0, 0, 0);
+    }
+
+    const trendStart = new Date(periodStart);
+    trendStart.setHours(0, 0, 0, 0);
+
+    const [hotels, tables, seats, periodReservations, trendReservations, recent] =
       await Promise.all([
         HotelTable.count(),
         Table.count({ where: { isActive: true } }),
         Seat.findAll({ where: { isActive: true }, attributes: ["status"] }),
         Reservation.findAll({
-            where: { ...reservationScope, dining_date: { [Op.between]: [startOfToday, endOfToday] } },
+          where: { ...reservationScope, dining_date: { [Op.between]: [periodStart, periodEnd] } },
           attributes: ["id", "dining_status", "seat_status"],
         }),
         Reservation.findAll({
-            where: { ...reservationScope, dining_date: { [Op.between]: [trendStart, endOfToday] } },
+          where: { ...reservationScope, dining_date: { [Op.between]: [trendStart, periodEnd] } },
           attributes: ["dining_date"],
         }),
-          Reservation.findAll({
-            where: reservationScope,
-            limit: 6,
+        Reservation.findAll({
+          where: { ...reservationScope, dining_date: { [Op.between]: [periodStart, periodEnd] } },
+          limit: 6,
           order: [["dining_date", "DESC"], ["start_time", "DESC"]],
           attributes: ["id", "dining_date", "start_time", "dining_status", "seat_status"],
           include: [{ model: HotelTable, as: "hotel", attributes: ["id", "hotel_name"] }],
@@ -357,19 +375,23 @@ export const getDashboardSummary = async (req, res) => {
       ]);
 
     const countStatus = (status) =>
-      todayReservations.filter((reservation) => reservation.dining_status === status).length;
+      periodReservations.filter((reservation) => reservation.dining_status === status).length;
     const bookedSeats = seats.filter((seat) => [1, 2, 3, 5].includes(seat.status)).length;
     const trendMap = trendReservations.reduce((result, reservation) => {
       const key = new Date(reservation.dining_date).toISOString().slice(0, 10);
       result[key] = (result[key] || 0) + 1;
       return result;
     }, {});
-    const trend = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(trendStart);
-      date.setDate(date.getDate() + index);
-      const key = date.toISOString().slice(0, 10);
-      return { date: key, bookings: trendMap[key] || 0 };
-    });
+    const trend = [];
+    const trendEnd = new Date(periodEnd);
+    trendEnd.setHours(0, 0, 0, 0);
+    const trendCursor = new Date(trendStart);
+    trendCursor.setHours(0, 0, 0, 0);
+    while (trendCursor <= trendEnd) {
+      const key = trendCursor.toISOString().slice(0, 10);
+      trend.push({ date: key, bookings: trendMap[key] || 0 });
+      trendCursor.setDate(trendCursor.getDate() + 1);
+    }
 
     return res.json({
         success: true,
@@ -381,7 +403,7 @@ export const getDashboardSummary = async (req, res) => {
           seats: seats.length,
           occupiedSeats: bookedSeats,
           occupancyRate: seats.length ? Math.round((bookedSeats / seats.length) * 100) : 0,
-          todayBookings: todayReservations.length,
+          todayBookings: periodReservations.length,
         },
         todayStatus: {
           confirmed: countStatus(RESERVATION_STATUS.CONFIRMED),
