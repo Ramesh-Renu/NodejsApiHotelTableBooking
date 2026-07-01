@@ -7,6 +7,7 @@ import { SEAT_STATUS } from "../utils/seatStatus.js";
 import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
 import CancelReservation from "../models/CancelledReservation.js";
 import RegisterUsersData from "../models/user.model.js";
+import Table from "../models/table.model.js";
 
 import { Op } from "sequelize";
 /**
@@ -312,6 +313,90 @@ export const getReservationsByHotel = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+export const getDashboardSummary = async (req, res) => {
+  try {
+    const user = await RegisterUsersData.findByPk(req.user.id, {
+      attributes: ["id", "user_type_id"],
+    });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    const isAdmin = [0, 1].includes(user.user_type_id);
+    const reservationScope = isAdmin ? {} : { user_id: req.user.id };
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+    const trendStart = new Date(startOfToday);
+    trendStart.setDate(trendStart.getDate() - 6);
+
+    const [hotels, tables, seats, todayReservations, trendReservations, recent] =
+      await Promise.all([
+        HotelTable.count(),
+        Table.count({ where: { isActive: true } }),
+        Seat.findAll({ where: { isActive: true }, attributes: ["status"] }),
+        Reservation.findAll({
+            where: { ...reservationScope, dining_date: { [Op.between]: [startOfToday, endOfToday] } },
+          attributes: ["id", "dining_status", "seat_status"],
+        }),
+        Reservation.findAll({
+            where: { ...reservationScope, dining_date: { [Op.between]: [trendStart, endOfToday] } },
+          attributes: ["dining_date"],
+        }),
+          Reservation.findAll({
+            where: reservationScope,
+            limit: 6,
+          order: [["dining_date", "DESC"], ["start_time", "DESC"]],
+          attributes: ["id", "dining_date", "start_time", "dining_status", "seat_status"],
+          include: [{ model: HotelTable, as: "hotel", attributes: ["id", "hotel_name"] }],
+        }),
+      ]);
+
+    const countStatus = (status) =>
+      todayReservations.filter((reservation) => reservation.dining_status === status).length;
+    const bookedSeats = seats.filter((seat) => [1, 2, 3, 5].includes(seat.status)).length;
+    const trendMap = trendReservations.reduce((result, reservation) => {
+      const key = new Date(reservation.dining_date).toISOString().slice(0, 10);
+      result[key] = (result[key] || 0) + 1;
+      return result;
+    }, {});
+    const trend = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(trendStart);
+      date.setDate(date.getDate() + index);
+      const key = date.toISOString().slice(0, 10);
+      return { date: key, bookings: trendMap[key] || 0 };
+    });
+
+    return res.json({
+        success: true,
+        data: {
+          isAdmin,
+        totals: {
+          hotels,
+          tables,
+          seats: seats.length,
+          occupiedSeats: bookedSeats,
+          occupancyRate: seats.length ? Math.round((bookedSeats / seats.length) * 100) : 0,
+          todayBookings: todayReservations.length,
+        },
+        todayStatus: {
+          confirmed: countStatus(RESERVATION_STATUS.CONFIRMED),
+          seated: countStatus(RESERVATION_STATUS.SEATED),
+          completed: countStatus(RESERVATION_STATUS.COMPLETED),
+          cancelled: countStatus(RESERVATION_STATUS.CANCELLED),
+          pending: countStatus(RESERVATION_STATUS.PENDING),
+        },
+        trend,
+        recent,
+      },
+    });
+  } catch (error) {
+    console.error("Dashboard summary error:", error);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
