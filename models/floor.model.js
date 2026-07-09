@@ -17,6 +17,11 @@ const Floor = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+    },
   },
   {
     tableName: "floors",
@@ -27,7 +32,7 @@ const Floor = sequelize.define(
         fields: ["hotel_table_id", "floor_number"],
       },
     ],
-  }
+  },
 );
 
 export default Floor;
