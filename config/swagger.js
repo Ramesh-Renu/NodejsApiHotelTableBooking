@@ -9,7 +9,7 @@ const swaggerDefinition = {
   },
   servers: [
     {
-      url: "http://localhost:5000",
+      url: "https://hotel-booking-api-y8gp.onrender.coms",
       description: "Local server",
     },
   ],
