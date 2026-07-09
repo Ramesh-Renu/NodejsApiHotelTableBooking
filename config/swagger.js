@@ -3,14 +3,14 @@ import swaggerJSDoc from "swagger-jsdoc";
 const swaggerDefinition = {
   openapi: "3.0.0",
   info: {
-    title: "OTP Authentication API",
+    title: "Hotel API",
     version: "1.0.0",
-    description: "API documentation for OTP-based authentication",
+    description: "API documentation for Hotel Booking System",
   },
   servers: [
     {
-      url: "https://hotel-booking-api-y8gp.onrender.coms",
-      description: "Local server",
+      url: "https://hotel-booking-api-y8gp.onrender.com",
+      description: "Production server",
     },
   ],
 
