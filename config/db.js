@@ -11,8 +11,14 @@ export const sequelize = new Sequelize(
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     dialect: "postgres",
-    timezone: "+05:30",     // <-- Force IST for timestamps
+    timezone: "+05:30",
     logging: false,
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false,
+      },
+    },
   }
 );
 
@@ -20,8 +26,10 @@ export const connectDB = async () => {
   try {
     await sequelize.authenticate();
     console.log("DB connected successfully");
-    // ✅ Auto create / update tables
-    // await sequelize.sync({ alter: true }); // 👈 ADD THIS
+
+    // Uncomment only if you want Sequelize to create/update tables
+    // await sequelize.sync({ alter: true });
+
     console.log("All models synchronized");
   } catch (error) {
     console.error("DB error:", error);

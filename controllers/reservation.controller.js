@@ -10,6 +10,144 @@ import RegisterUsersData from "../models/user.model.js";
 import Table from "../models/table.model.js";
 
 import { Op } from "sequelize";
+
+const ISO_DATE = "YYYY-MM-DD";
+const formatDateKey = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeRange = (startDate, endDate) => {
+  const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+  const end = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
+  if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+  return start <= end ? [start, end] : [end, start];
+};
+
+const getDurationDays = (start, end) =>
+  Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+
+const getAggregationType = (days) => {
+  if (days <= 30) return "daily";
+  if (days <= 90) return "weekly";
+  return "monthly";
+};
+
+const buildTrendPeriods = (start, end, aggregation) => {
+  const periods = [];
+  if (aggregation === "daily") {
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      periods.push({
+        label: cursor.toLocaleDateString(undefined, {
+          day: "2-digit",
+          month: "short",
+        }),
+        start: new Date(cursor),
+        end: new Date(cursor.setHours(23, 59, 59, 999)),
+      });
+      cursor.setDate(cursor.getDate() + 1);
+      cursor.setHours(0, 0, 0, 0);
+    }
+    return periods;
+  }
+
+  if (aggregation === "weekly") {
+    let cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor <= end) {
+      const bucketStart = new Date(cursor);
+      const bucketEnd = new Date(cursor);
+      bucketEnd.setDate(bucketEnd.getDate() + 6);
+      if (bucketEnd > end) bucketEnd.setTime(end.getTime());
+      periods.push({
+        label: `${bucketStart.toLocaleDateString(undefined, {
+          day: "2-digit",
+          month: "short",
+        })} - ${bucketEnd.toLocaleDateString(undefined, {
+          day: "2-digit",
+          month: "short",
+        })}`,
+        start: bucketStart,
+        end: bucketEnd,
+      });
+      cursor = new Date(bucketEnd);
+      cursor.setDate(cursor.getDate() + 1);
+      cursor.setHours(0, 0, 0, 0);
+    }
+    return periods;
+  }
+
+  let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cursor <= end) {
+    const bucketStart = new Date(cursor);
+    const bucketEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    if (bucketStart < start) bucketStart.setTime(start.getTime());
+    if (bucketEnd > end) bucketEnd.setTime(end.getTime());
+    periods.push({
+      label: bucketStart.toLocaleDateString(undefined, {
+        month: "short",
+        year: "numeric",
+      }),
+      start: bucketStart,
+      end: bucketEnd,
+    });
+    cursor.setMonth(cursor.getMonth() + 1);
+    cursor.setHours(0, 0, 0, 0);
+  }
+  return periods;
+};
+
+const aggregateTrend = (reservations, periods) => {
+  const trend = periods.map((period) => ({
+    label: period.label,
+    created: 0,
+    cancelled: 0,
+    completed: 0,
+  }));
+
+  reservations.forEach((reservation) => {
+    const diningDate = new Date(reservation.dining_date);
+    const index = periods.findIndex(
+      (period) => diningDate >= period.start && diningDate <= period.end,
+    );
+    if (index < 0) return;
+
+    trend[index].created += 1;
+    if (reservation.dining_status === RESERVATION_STATUS.CANCELLED) {
+      trend[index].cancelled += 1;
+    }
+    if (reservation.dining_status === RESERVATION_STATUS.COMPLETED) {
+      trend[index].completed += 1;
+    }
+  });
+
+  return trend;
+};
+
+const getUniqueBookedTables = (reservations) => {
+  const tableIds = new Set();
+  reservations.forEach((reservation) => {
+    const seatStatus = Array.isArray(reservation.seat_status)
+      ? reservation.seat_status
+      : typeof reservation.seat_status === "string"
+      ? JSON.parse(reservation.seat_status)
+      : [];
+
+    seatStatus.forEach((item) => {
+      if (item?.table_id) {
+        tableIds.add(item.table_id);
+      }
+    });
+  });
+  return tableIds.size;
+};
+
 /**
  * CREATE RESERVATION
  */
@@ -327,17 +465,14 @@ export const getDashboardSummary = async (req, res) => {
     const isAdmin = [0, 1].includes(user.user_type_id);
     const reservationScope = isAdmin ? {} : { user_id: req.user.id };
 
-    const { start_date, end_date } = req.query;
+    const params = req.method === "POST" ? req.body : req.query;
+    const { start_date, end_date } = params || {};
+    const normalizedRange = normalizeRange(start_date, end_date);
     let periodStart;
     let periodEnd;
 
-    if (start_date && end_date) {
-      periodStart = new Date(`${start_date}T00:00:00`);
-      periodEnd = new Date(`${end_date}T23:59:59.999`);
-      if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
-        periodStart = null;
-        periodEnd = null;
-      }
+    if (normalizedRange) {
+      [periodStart, periodEnd] = normalizedRange;
     }
 
     const now = new Date();
@@ -349,70 +484,60 @@ export const getDashboardSummary = async (req, res) => {
       periodStart.setHours(0, 0, 0, 0);
     }
 
-    const trendStart = new Date(periodStart);
-    trendStart.setHours(0, 0, 0, 0);
+    const durationDays = getDurationDays(periodStart, periodEnd);
+    const aggregation = getAggregationType(durationDays);
+    const trendPeriods = buildTrendPeriods(periodStart, periodEnd, aggregation);
 
-    const [hotels, tables, seats, periodReservations, trendReservations, recent] =
-      await Promise.all([
-        HotelTable.count(),
-        Table.count({ where: { isActive: true } }),
-        Seat.findAll({ where: { isActive: true }, attributes: ["status"] }),
-        Reservation.findAll({
-          where: { ...reservationScope, dining_date: { [Op.between]: [periodStart, periodEnd] } },
-          attributes: ["id", "dining_status", "seat_status"],
-        }),
-        Reservation.findAll({
-          where: { ...reservationScope, dining_date: { [Op.between]: [trendStart, periodEnd] } },
-          attributes: ["dining_date"],
-        }),
-        Reservation.findAll({
-          where: { ...reservationScope, dining_date: { [Op.between]: [periodStart, periodEnd] } },
-          limit: 6,
-          order: [["dining_date", "DESC"], ["start_time", "DESC"]],
-          attributes: ["id", "dining_date", "start_time", "dining_status", "seat_status"],
-          include: [{ model: HotelTable, as: "hotel", attributes: ["id", "hotel_name"] }],
-        }),
-      ]);
+    const [hotels, tables, seats, periodReservations, recent] = await Promise.all([
+      HotelTable.count(),
+      Table.count({ where: { isActive: true } }),
+      Seat.findAll({ where: { isActive: true }, attributes: ["status"] }),
+      Reservation.findAll({
+        where: { ...reservationScope, dining_date: { [Op.between]: [periodStart, periodEnd] } },
+        attributes: ["id", "dining_date", "dining_status", "seat_status", "hotel_id"],
+      }),
+      Reservation.findAll({
+        where: { ...reservationScope, dining_date: { [Op.between]: [periodStart, periodEnd] } },
+        limit: 6,
+        order: [["dining_date", "DESC"], ["start_time", "DESC"]],
+        attributes: ["id", "dining_date", "start_time", "dining_status", "seat_status"],
+        include: [{ model: HotelTable, as: "hotel", attributes: ["id", "hotel_name"] }],
+      }),
+    ]);
 
     const countStatus = (status) =>
       periodReservations.filter((reservation) => reservation.dining_status === status).length;
     const bookedSeats = seats.filter((seat) => [1, 2, 3, 5].includes(seat.status)).length;
-    const trendMap = trendReservations.reduce((result, reservation) => {
-      const key = new Date(reservation.dining_date).toISOString().slice(0, 10);
-      result[key] = (result[key] || 0) + 1;
-      return result;
-    }, {});
-    const trend = [];
-    const trendEnd = new Date(periodEnd);
-    trendEnd.setHours(0, 0, 0, 0);
-    const trendCursor = new Date(trendStart);
-    trendCursor.setHours(0, 0, 0, 0);
-    while (trendCursor <= trendEnd) {
-      const key = trendCursor.toISOString().slice(0, 10);
-      trend.push({ date: key, bookings: trendMap[key] || 0 });
-      trendCursor.setDate(trendCursor.getDate() + 1);
-    }
+    const tablesBooked = getUniqueBookedTables(periodReservations);
+    const hotelsWithBookings = new Set(periodReservations.map((reservation) => reservation.hotel_id)).size;
+    const trend = aggregateTrend(periodReservations, trendPeriods);
 
     return res.json({
-        success: true,
-        data: {
-          isAdmin,
+      success: true,
+      data: {
+        isAdmin,
         totals: {
           hotels,
+          hotelsWithBookings,
           tables,
+          tablesBooked,
           seats: seats.length,
           occupiedSeats: bookedSeats,
           occupancyRate: seats.length ? Math.round((bookedSeats / seats.length) * 100) : 0,
           todayBookings: periodReservations.length,
         },
         todayStatus: {
+          created: periodReservations.length,
           confirmed: countStatus(RESERVATION_STATUS.CONFIRMED),
           seated: countStatus(RESERVATION_STATUS.SEATED),
           completed: countStatus(RESERVATION_STATUS.COMPLETED),
           cancelled: countStatus(RESERVATION_STATUS.CANCELLED),
           pending: countStatus(RESERVATION_STATUS.PENDING),
         },
-        trend,
+        trend: {
+          aggregation,
+          points: trend,
+        },
         recent,
       },
     });

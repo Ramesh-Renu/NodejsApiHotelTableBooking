@@ -12,6 +12,7 @@ import { authenticate } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
 
+router.post("/dashboard/summary", authenticate, getDashboardSummary);
 router.get("/dashboard/summary", authenticate, getDashboardSummary);
 
 /**
