@@ -28,7 +28,7 @@ export const connectDB = async () => {
     console.log("DB connected successfully");
 
     // Uncomment only if you want Sequelize to create/update tables
-    // await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: true });
 
     console.log("All models synchronized");
   } catch (error) {
