@@ -1,10 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-
 import swaggerUi from "swagger-ui-express";
 import swaggerSpec from "./config/swagger.js";
-
 import otpRoutes from "./routes/otp.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -19,6 +17,12 @@ import seatsStatusRoutes from "./routes/seatStatusMaster.routes.js";
 import areaRoutes from "./routes/area.routes.js";
 import locationRoutes from "./routes/location.routes.js";
 import diningStatusRoutes from "./routes/diningStatusMaster.routes.js";
+import menuRoutes from "./routes/menu.routes.js";
+import orderStatusRoutes from "./routes/orderStatusMaster.routes.js";
+import paymentStatusRoutes from "./routes/paymentStatusMaster.routes.js";
+import reservationOrderRoutes from "./routes/reservationOrder.routes.js";
+import uploadRoutes from "./routes/upload.routes.js";
+
 import "./models/index.js";
 
 connectDB(); // 👈 MUST BE HERE
@@ -44,10 +48,17 @@ app.use("/api/areas", areaRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/seat-status", seatsStatusRoutes);
 app.use("/api/dining-status", diningStatusRoutes);
-
+app.use("/api/menu", menuRoutes);
+app.use("/api/order-status", orderStatusRoutes);
+app.use("/api/payment-status", paymentStatusRoutes);
 
 /* Swagger */
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+/* Order */
+app.use("/api/orders", reservationOrderRoutes);
+
+app.use("/api/upload", uploadRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

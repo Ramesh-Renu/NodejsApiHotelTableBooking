@@ -1,0 +1,338 @@
+// controllers/menu.controller.js
+
+import { Op } from "sequelize";
+import Menu from "../models/menu.model.js";
+import MenuCategory from "../models/menuCategory.model.js";
+import HotelTable from "../models/hotelTable.model.js";
+
+/**
+ * Create Menu
+ */
+export const createMenu = async (req, res) => {
+  try {
+    const {
+      hotel_id,
+      category_id,
+      menu_name,
+      menu_code,
+      description,
+      price,
+      preparation_time,
+      is_veg,
+      spice_level,
+      calories,
+      is_available,
+      display_order,
+    } = req.body;
+
+    if (
+      !hotel_id ||
+      !category_id ||
+      !menu_name ||
+      price === undefined ||
+      price === null
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Hotel, Category, Menu Name and Price are required.",
+      });
+    }
+
+    const category = await MenuCategory.findOne({
+      where: {
+        id: category_id,
+        hotel_id,
+      },
+    });
+
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu category not found.",
+      });
+    }
+    const formattedMenuName = menu_name.trim();
+
+    const exists = await Menu.findOne({
+      where: {
+        hotel_id,
+        [Op.and]: where(
+          fn("LOWER", col("menu_name")),
+          formattedMenuName.toLowerCase(),
+        ),
+      },
+    });
+
+    if (exists) {
+      return res.status(400).json({
+        success: false,
+        message: "Menu already exists.",
+      });
+    }
+    let image_url = null;
+    let image_file_id = null;
+
+    if (req.file) {
+      const uploadedImage = await uploadImage(req.file);
+
+      if (!uploadedImage.success) {
+        return res.status(500).json({
+          success: false,
+          message: uploadedImage.message,
+        });
+      }
+
+      image_url = uploadedImage.url;
+      image_file_id = uploadedImage.fileId;
+    }
+
+    if (req.file && !req.file.mimetype.startsWith("image/")) {
+      return res.status(400).json({
+        success: false,
+        message: "Only image files are allowed.",
+      });
+    }
+    if (Number(price) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Price must be greater than 0.",
+      });
+    }
+
+    const menu = await Menu.create({
+      hotel_id,
+      category_id,
+      menu_name,
+      menu_code,
+      description,
+      image_url,
+      image_file_id,
+      price,
+      preparation_time,
+      is_veg,
+      spice_level,
+      calories,
+      is_available,
+      display_order,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Menu created successfully.",
+      data: menu,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create menu.",
+    });
+  }
+};
+
+/**
+ * Get All Menus
+ */
+export const getMenus = async (req, res) => {
+  try {
+    let {
+      page = 1,
+      limit = 10,
+      search,
+      hotel_id,
+      category_id,
+      is_available,
+      is_veg,
+    } = req.query;
+
+    page = Number(page);
+    limit = Number(limit);
+
+    const where = {};
+
+    if (hotel_id) where.hotel_id = hotel_id;
+    if (category_id) where.category_id = category_id;
+
+    if (is_available !== undefined) where.is_available = is_available;
+
+    if (is_veg !== undefined) where.is_veg = is_veg;
+
+    if (search) {
+      where[Op.or] = [
+        {
+          menu_name: {
+            [Op.iLike]: `%${search}%`,
+          },
+        },
+        {
+          description: {
+            [Op.iLike]: `%${search}%`,
+          },
+        },
+      ];
+    }
+
+    const { rows, count } = await Menu.findAndCountAll({
+      where,
+      include: [
+        {
+          model: MenuCategory,
+          as: "category",
+          attributes: ["id", "category_name"],
+        },
+        {
+          model: HotelTable,
+          as: "hotel",
+          attributes: ["id", "hotel_name"],
+        },
+      ],
+      limit,
+      offset: (page - 1) * limit,
+      order: [
+        ["display_order", "ASC"],
+        ["menu_name", "ASC"],
+      ],
+    });
+
+    return res.json({
+      success: true,
+      total: count,
+      page,
+      pages: Math.ceil(count / limit),
+      rows,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get Menu By Id
+ */
+export const getMenuById = async (req, res) => {
+  try {
+    const menu = await Menu.findByPk(req.params.id, {
+      include: [
+        {
+          model: MenuCategory,
+          as: "category",
+        },
+        {
+          model: HotelTable,
+          as: "hotel",
+        },
+      ],
+    });
+
+    if (!menu) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu not found.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: menu,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Update Menu
+ */
+export const updateMenu = async (req, res) => {
+  try {
+    const menu = await Menu.findByPk(req.params.id);
+
+    if (!menu) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu not found.",
+      });
+    }
+
+    await menu.update(req.body);
+
+    return res.json({
+      success: true,
+      message: "Menu updated successfully.",
+      data: menu,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Delete Menu
+ */
+export const deleteMenu = async (req, res) => {
+  try {
+    const menu = await Menu.findByPk(req.params.id);
+
+    if (!menu) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu not found.",
+      });
+    }
+
+    await menu.destroy();
+
+    return res.json({
+      success: true,
+      message: "Menu deleted successfully.",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Update Availability
+ */
+export const updateMenuAvailability = async (req, res) => {
+  try {
+    const menu = await Menu.findByPk(req.params.id);
+
+    if (!menu) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu not found.",
+      });
+    }
+
+    menu.is_available = !menu.is_available;
+
+    await menu.save();
+
+    return res.json({
+      success: true,
+      message: "Availability updated successfully.",
+      data: menu,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
