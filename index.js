@@ -18,8 +18,10 @@ import areaRoutes from "./routes/area.routes.js";
 import locationRoutes from "./routes/location.routes.js";
 import diningStatusRoutes from "./routes/diningStatusMaster.routes.js";
 import menuRoutes from "./routes/menu.routes.js";
+import menuCategoryRoutes from "./routes/menuCategory.routes.js";
 import orderStatusRoutes from "./routes/orderStatusMaster.routes.js";
 import paymentStatusRoutes from "./routes/paymentStatusMaster.routes.js";
+import spiceLevelRoutes from "./routes/spiceLevelMaster.routes.js";
 import reservationOrderRoutes from "./routes/reservationOrder.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 
@@ -49,8 +51,10 @@ app.use("/api/locations", locationRoutes);
 app.use("/api/seat-status", seatsStatusRoutes);
 app.use("/api/dining-status", diningStatusRoutes);
 app.use("/api/menu", menuRoutes);
+app.use("/api/menu-categories", menuCategoryRoutes);
 app.use("/api/order-status", orderStatusRoutes);
 app.use("/api/payment-status", paymentStatusRoutes);
+app.use("/api/spice-levels", spiceLevelRoutes);
 
 /* Swagger */
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

@@ -60,13 +60,9 @@ const router = express.Router();
  *               is_veg:
  *                 type: boolean
  *               spice_level:
- *                 type: string
- *                 enum:
- *                   - NONE
- *                   - MILD
- *                   - MEDIUM
- *                   - HOT
- *                   - EXTRA_HOT
+ *                 type: integer
+ *                 description: Spice level master ID
+ *                 example: 1
  *               calories:
  *                 type: integer
  *               is_available:

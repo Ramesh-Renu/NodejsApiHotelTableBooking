@@ -9,6 +9,7 @@ import ReservationOrder from "./reservationOrder.model.js";
 import ReservationOrderItem from "./reservationOrderItem.model.js";
 import OrderStatusMaster from "./orderStatusMaster.model.js";
 import PaymentStatusMaster from "./paymentStatusMaster.model.js";
+import SpiceLevelMaster from "./spiceLevelMaster.model.js";
 
 /* ==========================================================
    HOTEL ↔ FLOORS
@@ -96,6 +97,18 @@ Menu.belongsTo(HotelTable, {
   as: "hotel",
 });
 
+SpiceLevelMaster.hasMany(Menu, {
+  foreignKey: "spice_level",
+  as: "menus",
+  constraints: false,
+});
+
+Menu.belongsTo(SpiceLevelMaster, {
+  foreignKey: "spice_level",
+  as: "spiceLevel",
+  constraints: false,
+});
+
 Reservation.hasMany(ReservationOrder, {
     foreignKey: "reservation_id",
     as: "orders",
@@ -148,4 +161,5 @@ export {
   ReservationOrderItem,
   OrderStatusMaster,
   PaymentStatusMaster,
+  SpiceLevelMaster,
 };

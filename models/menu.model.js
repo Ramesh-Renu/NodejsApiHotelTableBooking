@@ -82,9 +82,9 @@ const Menu = sequelize.define(
     },
 
     spice_level: {
-      type: DataTypes.ENUM("NONE", "MILD", "MEDIUM", "HOT", "EXTRA_HOT"),
+      type: DataTypes.INTEGER,
       allowNull: false,
-      defaultValue: "NONE",
+      defaultValue: 1,
     },
 
     calories: {

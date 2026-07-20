@@ -1,9 +1,11 @@
 // controllers/menu.controller.js
 
-import { Op } from "sequelize";
+import { Op, col, fn, where } from "sequelize";
 import Menu from "../models/menu.model.js";
 import MenuCategory from "../models/menuCategory.model.js";
 import HotelTable from "../models/hotelTable.model.js";
+import SpiceLevelMaster from "../models/spiceLevelMaster.model.js";
+import { uploadImage } from "../utils/uploadImage.js";
 
 /**
  * Create Menu
@@ -35,6 +37,22 @@ export const createMenu = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Hotel, Category, Menu Name and Price are required.",
+      });
+    }
+
+    const spiceLevelId = spice_level === undefined ? 1 : Number(spice_level);
+    if (!Number.isInteger(spiceLevelId) || spiceLevelId < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "spice_level must be a valid integer ID.",
+      });
+    }
+
+    const spiceLevel = await SpiceLevelMaster.findByPk(spiceLevelId);
+    if (!spiceLevel) {
+      return res.status(404).json({
+        success: false,
+        message: "Spice level not found.",
       });
     }
 
@@ -71,6 +89,7 @@ export const createMenu = async (req, res) => {
     }
     let image_url = null;
     let image_file_id = null;
+    let image_name = req.file?.originalname || req.body.image || null;
 
     if (req.file) {
       const uploadedImage = await uploadImage(req.file);
@@ -105,12 +124,13 @@ export const createMenu = async (req, res) => {
       menu_name,
       menu_code,
       description,
+      image: image_name,
       image_url,
       image_file_id,
       price,
       preparation_time,
       is_veg,
-      spice_level,
+      spice_level: spiceLevelId,
       calories,
       is_available,
       display_order,
@@ -175,6 +195,26 @@ export const getMenus = async (req, res) => {
 
     const { rows, count } = await Menu.findAndCountAll({
       where,
+      attributes: [
+        "id",
+        "hotel_id",
+        "category_id",
+        "menu_name",
+        "menu_code",
+        "description",
+        "image",
+        "image_url",
+        "image_file_id",
+        "price",
+        "preparation_time",
+        "is_veg",
+        "spice_level",
+        "calories",
+        "is_available",
+        "display_order",
+        "createdAt",
+        "updatedAt",
+      ],
       include: [
         {
           model: MenuCategory,
@@ -185,6 +225,11 @@ export const getMenus = async (req, res) => {
           model: HotelTable,
           as: "hotel",
           attributes: ["id", "hotel_name"],
+        },
+        {
+          model: SpiceLevelMaster,
+          as: "spiceLevel",
+          attributes: ["id", "spice_level", "description", "is_active"],
         },
       ],
       limit,
@@ -218,6 +263,26 @@ export const getMenus = async (req, res) => {
 export const getMenuById = async (req, res) => {
   try {
     const menu = await Menu.findByPk(req.params.id, {
+      attributes: [
+        "id",
+        "hotel_id",
+        "category_id",
+        "menu_name",
+        "menu_code",
+        "description",
+        "image",
+        "image_url",
+        "image_file_id",
+        "price",
+        "preparation_time",
+        "is_veg",
+        "spice_level",
+        "calories",
+        "is_available",
+        "display_order",
+        "createdAt",
+        "updatedAt",
+      ],
       include: [
         {
           model: MenuCategory,
@@ -226,6 +291,10 @@ export const getMenuById = async (req, res) => {
         {
           model: HotelTable,
           as: "hotel",
+        },
+        {
+          model: SpiceLevelMaster,
+          as: "spiceLevel",
         },
       ],
     });
@@ -263,7 +332,29 @@ export const updateMenu = async (req, res) => {
       });
     }
 
-    await menu.update(req.body);
+    const updates = { ...req.body };
+
+    if (updates.spice_level !== undefined) {
+      const spiceLevelId = Number(updates.spice_level);
+      if (!Number.isInteger(spiceLevelId) || spiceLevelId < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "spice_level must be a valid integer ID.",
+        });
+      }
+
+      const spiceLevel = await SpiceLevelMaster.findByPk(spiceLevelId);
+      if (!spiceLevel) {
+        return res.status(404).json({
+          success: false,
+          message: "Spice level not found.",
+        });
+      }
+
+      updates.spice_level = spiceLevelId;
+    }
+
+    await menu.update(updates);
 
     return res.json({
       success: true,
