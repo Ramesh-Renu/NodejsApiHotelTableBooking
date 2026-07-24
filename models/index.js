@@ -10,7 +10,8 @@ import ReservationOrderItem from "./reservationOrderItem.model.js";
 import OrderStatusMaster from "./orderStatusMaster.model.js";
 import PaymentStatusMaster from "./paymentStatusMaster.model.js";
 import SpiceLevelMaster from "./spiceLevelMaster.model.js";
-
+import MenuSideDish from "./menuSideDish.model.js";
+import MenuSideDishMapping from "./menuSideDishMapping.model.js";
 /* ==========================================================
    HOTEL ↔ FLOORS
    ========================================================== */
@@ -149,6 +150,22 @@ ReservationOrderItem.belongsTo(Menu, {
   as: "menu",
 });
 
+// Menu → Mapping
+Menu.hasMany(MenuSideDishMapping, {
+  foreignKey: "menu_id",
+  as: "sideDishes",
+});
+
+// SideDish → Mapping
+MenuSideDish.hasMany(MenuSideDishMapping, {
+  foreignKey: "side_dish_id",
+  as: "menuMappings",
+});
+MenuSideDishMapping.belongsTo(MenuSideDish, {
+  foreignKey: "side_dish_id",
+  as: "sideDish",
+});
+
 export {
   HotelTable,
   Floor,
@@ -162,4 +179,6 @@ export {
   OrderStatusMaster,
   PaymentStatusMaster,
   SpiceLevelMaster,
+  MenuSideDish,
+  MenuSideDishMapping
 };

@@ -6,6 +6,7 @@ import MenuCategory from "../models/menuCategory.model.js";
 import HotelTable from "../models/hotelTable.model.js";
 import SpiceLevelMaster from "../models/spiceLevelMaster.model.js";
 import { uploadImage } from "../utils/uploadImage.js";
+import MenuSideDishMapping from "../models/menuSideDishMapping.model.js";
 
 /**
  * Create Menu
@@ -25,6 +26,7 @@ export const createMenu = async (req, res) => {
       calories,
       is_available,
       display_order,
+      side_dishes = [],
     } = req.body;
 
     if (
@@ -118,24 +120,36 @@ export const createMenu = async (req, res) => {
       });
     }
 
-    const menu = await Menu.create({
-      hotel_id,
-      category_id,
-      menu_name,
-      menu_code,
-      description,
-      image: image_name,
-      image_url,
-      image_file_id,
-      price,
-      preparation_time,
-      is_veg,
-      spice_level: spiceLevelId,
-      calories,
-      is_available,
-      display_order,
-    });
+    const menu = await Menu.create(
+      {
+        hotel_id,
+        category_id,
+        menu_name,
+        menu_code,
+        description,
+        image: image_name,
+        image_url,
+        image_file_id,
+        price,
+        preparation_time,
+        is_veg,
+        spice_level: spiceLevelId,
+        calories,
+        is_available,
+        display_order,
+      },
+      { transaction },
+    );
+    if (side_dishes.length) {
+      const mappings = side_dishes.map((sideDishId) => ({
+        menu_id: menu.id,
+        side_dish_id: sideDishId,
+      }));
 
+      await MenuSideDishMapping.bulkCreate(mappings, {
+        transaction,
+      });
+    }
     return res.status(201).json({
       success: true,
       message: "Menu created successfully.",

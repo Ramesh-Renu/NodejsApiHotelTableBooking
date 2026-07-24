@@ -24,6 +24,7 @@ import paymentStatusRoutes from "./routes/paymentStatusMaster.routes.js";
 import spiceLevelRoutes from "./routes/spiceLevelMaster.routes.js";
 import reservationOrderRoutes from "./routes/reservationOrder.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
+import menuSideDishRoutes from "./routes/menuSideDish.routes.js";
 
 import "./models/index.js";
 
@@ -55,6 +56,7 @@ app.use("/api/menu-categories", menuCategoryRoutes);
 app.use("/api/order-status", orderStatusRoutes);
 app.use("/api/payment-status", paymentStatusRoutes);
 app.use("/api/spice-levels", spiceLevelRoutes);
+app.use("/api/menu-side-dishes", menuSideDishRoutes);
 
 /* Swagger */
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
