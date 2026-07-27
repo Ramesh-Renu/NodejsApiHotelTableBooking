@@ -9,9 +9,10 @@ const swaggerDefinition = {
   },
   servers: [
     {
-      url: "https://hotel-booking-api-y8gp.onrender.com",
-      description: "Production server",
-    },
+      // url: "https://hotel-booking-api-y8gp.onrender.com",
+      url: "http://localhost:5000",
+      description: "Local server",
+    }
   ],
 
   /* 🔐 ADD THIS PART (JWT CONFIG) */

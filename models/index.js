@@ -3,6 +3,16 @@ import Floor from "./floor.model.js";
 import Table from "./table.model.js";
 import Seat from "./seat.model.js";
 import Reservation from "./reservation.model.js";
+import MenuCategory from "./menuCategory.model.js";
+import Menu from "./menu.model.js";
+import ReservationOrder from "./reservationOrder.model.js";
+import ReservationOrderItem from "./reservationOrderItem.model.js";
+import OrderStatusMaster from "./orderStatusMaster.model.js";
+import PaymentStatusMaster from "./paymentStatusMaster.model.js";
+import SpiceLevelMaster from "./spiceLevelMaster.model.js";
+import MenuSideDish from "./menuSideDish.model.js";
+import MenuSideDishMapping from "./menuSideDishMapping.model.js";
+import SideDish from "./sideDish.model.js";
 
 /* ==========================================================
    HOTEL ↔ FLOORS
@@ -65,4 +75,128 @@ Floor.hasMany(Reservation, {
   as: "reservations",
 });
 
-export { HotelTable, Floor, Table, Seat, Reservation };
+HotelTable.hasMany(MenuCategory, {
+  foreignKey: "hotel_id",
+  as: "menuCategories",
+});
+
+MenuCategory.belongsTo(HotelTable, {
+  foreignKey: "hotel_id",
+  as: "hotel",
+});
+
+MenuCategory.hasMany(Menu, {
+  foreignKey: "category_id",
+  as: "menus",
+});
+
+Menu.belongsTo(MenuCategory, {
+  foreignKey: "category_id",
+  as: "category",
+});
+
+Menu.belongsTo(HotelTable, {
+  foreignKey: "hotel_id",
+  as: "hotel",
+});
+
+SpiceLevelMaster.hasMany(Menu, {
+  foreignKey: "spice_level",
+  as: "menus",
+  constraints: false,
+});
+
+Menu.belongsTo(SpiceLevelMaster, {
+  foreignKey: "spice_level",
+  as: "spiceLevel",
+  constraints: false,
+});
+
+Reservation.hasMany(ReservationOrder, {
+    foreignKey: "reservation_id",
+    as: "orders",
+});
+
+ReservationOrder.belongsTo(Reservation, {
+    foreignKey: "reservation_id",
+    as: "reservation",
+});
+
+HotelTable.hasMany(ReservationOrder, {
+    foreignKey: "hotel_id",
+    as: "orders",
+});
+
+ReservationOrder.belongsTo(HotelTable, {
+    foreignKey: "hotel_id",
+    as: "hotel",
+});
+
+ReservationOrder.hasMany(ReservationOrderItem, {
+  foreignKey: "reservation_order_id",
+  as: "items",
+});
+
+ReservationOrderItem.belongsTo(ReservationOrder, {
+  foreignKey: "reservation_order_id",
+  as: "order",
+});
+
+Menu.hasMany(ReservationOrderItem, {
+  foreignKey: "menu_id",
+  as: "orderItems",
+});
+
+ReservationOrderItem.belongsTo(Menu, {
+  foreignKey: "menu_id",
+  as: "menu",
+});
+
+// Menu → Mapping
+Menu.hasMany(MenuSideDishMapping, {
+  foreignKey: "menu_id",
+  as: "sideDishes",
+});
+
+// SideDish → Mapping
+MenuSideDish.hasMany(MenuSideDishMapping, {
+  foreignKey: "side_dish_id",
+  as: "menuMappings",
+});
+MenuSideDishMapping.belongsTo(MenuSideDish, {
+  foreignKey: "side_dish_id",
+  as: "sideDish",
+});
+
+MenuSideDishMapping.belongsTo(Menu, {
+  foreignKey: "menu_id",
+  as: "menu",
+});
+
+MenuCategory.hasMany(SideDish, {
+  foreignKey: "category_id",
+  as: "sideDishes",
+});
+
+SideDish.belongsTo(MenuCategory, {
+  foreignKey: "category_id",
+  as: "category",
+});
+
+export {
+  HotelTable,
+  Floor,
+  Table,
+  Seat,
+  Reservation,
+  MenuCategory,
+  Menu,
+  ReservationOrder,
+  ReservationOrderItem,
+  OrderStatusMaster,
+  PaymentStatusMaster,
+  SpiceLevelMaster,
+  MenuSideDish,
+  MenuSideDishMapping,
+  SideDish
+};
