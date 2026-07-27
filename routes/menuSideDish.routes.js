@@ -72,7 +72,7 @@ router.post("/", authenticate, createSideDish);
  *       500:
  *         description: Internal Server Error
  */
-router.get("/", authenticate, getAllSideDishes);
+router.get("/", getAllSideDishes);
 
 /**
  * @swagger
@@ -97,7 +97,7 @@ router.get("/", authenticate, getAllSideDishes);
  *       500:
  *         description: Internal Server Error
  */
-router.get("/:id", authenticate, getSideDishById);
+router.get("/:id", getSideDishById);
 
 /**
  * @swagger

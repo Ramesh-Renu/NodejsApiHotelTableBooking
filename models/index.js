@@ -12,6 +12,8 @@ import PaymentStatusMaster from "./paymentStatusMaster.model.js";
 import SpiceLevelMaster from "./spiceLevelMaster.model.js";
 import MenuSideDish from "./menuSideDish.model.js";
 import MenuSideDishMapping from "./menuSideDishMapping.model.js";
+import SideDish from "./sideDish.model.js";
+
 /* ==========================================================
    HOTEL ↔ FLOORS
    ========================================================== */
@@ -166,6 +168,21 @@ MenuSideDishMapping.belongsTo(MenuSideDish, {
   as: "sideDish",
 });
 
+MenuSideDishMapping.belongsTo(Menu, {
+  foreignKey: "menu_id",
+  as: "menu",
+});
+
+MenuCategory.hasMany(SideDish, {
+  foreignKey: "category_id",
+  as: "sideDishes",
+});
+
+SideDish.belongsTo(MenuCategory, {
+  foreignKey: "category_id",
+  as: "category",
+});
+
 export {
   HotelTable,
   Floor,
@@ -180,5 +197,6 @@ export {
   PaymentStatusMaster,
   SpiceLevelMaster,
   MenuSideDish,
-  MenuSideDishMapping
+  MenuSideDishMapping,
+  SideDish
 };

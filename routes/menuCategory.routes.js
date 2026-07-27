@@ -77,7 +77,7 @@ router.post("/", authenticate, createMenuCategory);
  *       200:
  *         description: Menu category list
  */
-router.get("/", authenticate, getMenuCategories);
+router.get("/", getMenuCategories);
 
 /**
  * @swagger
@@ -96,7 +96,7 @@ router.get("/", authenticate, getMenuCategories);
  *       200:
  *         description: Menu category details
  */
-router.get("/:id", authenticate, getMenuCategoryById);
+router.get("/:id", getMenuCategoryById);
 
 /**
  * @swagger

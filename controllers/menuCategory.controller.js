@@ -9,6 +9,11 @@ const parseBoolean = (value) => {
   if (value === false || value === "false") return false;
   return null;
 };
+const hotelInclude = {
+  model: HotelTable,
+  as: "hotel",
+  attributes: ["id", "hotel_name"],
+};
 
 const categoryInclude = {
   model: HotelTable,
@@ -276,3 +281,4 @@ export const deleteMenuCategory = async (req, res) => {
     });
   }
 };
+

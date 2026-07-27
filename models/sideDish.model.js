@@ -1,9 +1,10 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../config/db.js";
 import HotelTable from "./hotelTable.model.js";
-import SideDish from "./sideDish.model.js";
-const MenuCategory = sequelize.define(
-  "MenuCategory",
+import MenuCategory from "./menuCategory.model.js";
+
+const SideDish = sequelize.define(
+  "SideDish",
   {
     id: {
       type: DataTypes.INTEGER,
@@ -20,14 +21,18 @@ const MenuCategory = sequelize.define(
       },
     },
 
-    category_name: {
-      type: DataTypes.STRING(100),
+    category_id: {
+      type: DataTypes.INTEGER,
       allowNull: false,
-      validate: {
-        notEmpty: {
-          msg: "Category name is required",
-        },
+      references: {
+        model: "menu_categories",
+        key: "id",
       },
+    },
+
+    side_dish_name: {
+      type: DataTypes.STRING,
+      allowNull: false,
     },
 
     description: {
@@ -35,24 +40,36 @@ const MenuCategory = sequelize.define(
       allowNull: true,
     },
 
+    price: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
+
     display_order: {
       type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 1,
+      defaultValue: 0,
     },
 
     is_active: {
       type: DataTypes.BOOLEAN,
-      allowNull: false,
       defaultValue: true,
     },
   },
   {
-    tableName: "menu_categories",
+    tableName: "side_dishes",
     timestamps: true,
-    underscored: false,
-  }
+  },
 );
 
+SideDish.belongsTo(HotelTable, {
+  foreignKey: "hotel_id",
+  as: "hotel",
+});
 
-export default MenuCategory;
+HotelTable.hasMany(SideDish, {
+  foreignKey: "hotel_id",
+  as: "sideDishes",
+});
+
+export default SideDish;

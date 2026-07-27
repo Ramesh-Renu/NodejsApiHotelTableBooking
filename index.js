@@ -25,8 +25,9 @@ import spiceLevelRoutes from "./routes/spiceLevelMaster.routes.js";
 import reservationOrderRoutes from "./routes/reservationOrder.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import menuSideDishRoutes from "./routes/menuSideDish.routes.js";
-
+import sideDishRoutes from "./routes/sideDish.routes.js";
 import "./models/index.js";
+
 
 connectDB(); // 👈 MUST BE HERE
 dotenv.config();
@@ -57,6 +58,7 @@ app.use("/api/order-status", orderStatusRoutes);
 app.use("/api/payment-status", paymentStatusRoutes);
 app.use("/api/spice-levels", spiceLevelRoutes);
 app.use("/api/menu-side-dishes", menuSideDishRoutes);
+app.use("/api/side-dishes", sideDishRoutes);
 
 /* Swagger */
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

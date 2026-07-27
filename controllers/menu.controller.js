@@ -7,6 +7,10 @@ import HotelTable from "../models/hotelTable.model.js";
 import SpiceLevelMaster from "../models/spiceLevelMaster.model.js";
 import { uploadImage } from "../utils/uploadImage.js";
 import MenuSideDishMapping from "../models/menuSideDishMapping.model.js";
+import sequelize from "../config/db.js";
+import MenuSideDish from "../models/menuSideDish.model.js";
+
+const transaction = await sequelize.transaction();
 
 /**
  * Create Menu
@@ -150,6 +154,7 @@ export const createMenu = async (req, res) => {
         transaction,
       });
     }
+    await transaction.commit();
     return res.status(201).json({
       success: true,
       message: "Menu created successfully.",
@@ -157,7 +162,7 @@ export const createMenu = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-
+    await transaction.rollback();
     return res.status(500).json({
       success: false,
       message: "Failed to create menu.",
@@ -245,6 +250,17 @@ export const getMenus = async (req, res) => {
           as: "spiceLevel",
           attributes: ["id", "spice_level", "description", "is_active"],
         },
+        {
+          model: MenuSideDishMapping,
+          as: "sideDishes",
+          required: false,
+          include: [
+            {
+              model: MenuSideDish,
+              as: "sideDish",
+            },
+          ],
+        },
       ],
       limit,
       offset: (page - 1) * limit,
@@ -253,13 +269,22 @@ export const getMenus = async (req, res) => {
         ["menu_name", "ASC"],
       ],
     });
+    const formattedRows = rows.map((menu) => {
+      const menuData = menu.toJSON();
 
+      menuData.sideDishes = menuData.sideDishes.map((mapping) => ({
+        ...mapping.sideDish,
+        is_complimentary: mapping.is_complimentary,
+      }));
+
+      return menuData;
+    });
     return res.json({
       success: true,
       total: count,
       page,
       pages: Math.ceil(count / limit),
-      rows,
+      rows: formattedRows,
     });
   } catch (error) {
     console.error(error);
@@ -310,6 +335,33 @@ export const getMenuById = async (req, res) => {
           model: SpiceLevelMaster,
           as: "spiceLevel",
         },
+        {
+          model: MenuSideDishMapping,
+          as: "sideDishes",
+          attributes: [
+            "id",
+            "menu_id",
+            "side_dish_id",
+            "is_complimentary",
+            "created_at",
+          ],
+          required: false,
+          include: [
+            {
+              model: MenuSideDish,
+              as: "sideDish",
+              attributes: [
+                "id",
+                "side_dish_name",
+                "description",
+                "is_active",
+                "display_order",
+                "created_at",
+                "updated_at",
+              ],
+            },
+          ],
+        },
       ],
     });
 
@@ -320,9 +372,16 @@ export const getMenuById = async (req, res) => {
       });
     }
 
+    const menuData = menu.toJSON();
+
+    menuData.sideDishes = menuData.sideDishes.map((mapping) => ({
+      ...mapping.sideDish,
+      is_complimentary: mapping.is_complimentary,
+    }));
+
     return res.json({
       success: true,
-      data: menu,
+      data: menuData,
     });
   } catch (error) {
     return res.status(500).json({
@@ -331,7 +390,6 @@ export const getMenuById = async (req, res) => {
     });
   }
 };
-
 /**
  * Update Menu
  */
@@ -346,7 +404,7 @@ export const updateMenu = async (req, res) => {
       });
     }
 
-    const updates = { ...req.body };
+    const { side_dishes = [], ...updates } = req.body;
 
     if (updates.spice_level !== undefined) {
       const spiceLevelId = Number(updates.spice_level);
@@ -369,7 +427,20 @@ export const updateMenu = async (req, res) => {
     }
 
     await menu.update(updates);
+    await MenuSideDishMapping.destroy({
+      where: {
+        menu_id: menu.id,
+      },
+    });
+    if (side_dishes.length) {
+      await MenuSideDishMapping.bulkCreate(
+        side_dishes.map((id) => ({
+          menu_id: menu.id,
 
+          side_dish_id: id,
+        })),
+      );
+    }
     return res.json({
       success: true,
       message: "Menu updated successfully.",
@@ -396,7 +467,11 @@ export const deleteMenu = async (req, res) => {
         message: "Menu not found.",
       });
     }
-
+    await MenuSideDishMapping.destroy({
+      where: {
+        menu_id: menu.id,
+      },
+    });
     await menu.destroy();
 
     return res.json({
