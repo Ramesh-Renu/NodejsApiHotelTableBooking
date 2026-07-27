@@ -160,14 +160,24 @@ export const createMenu = async (req, res) => {
       message: "Menu created successfully.",
       data: menu,
     });
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+  console.error("========== MENU CREATE ERROR ==========");
+  console.error("Name:", err.name);
+  console.error("Message:", err.message);
+  console.error("Parent:", err.parent?.message);
+  console.error("SQL:", err.sql);
+  console.error("Parameters:", err.parameters);
+  console.error(err);
+
+  if (transaction) {
     await transaction.rollback();
-    return res.status(500).json({
-      success: false,
-      message: "Failed to create menu.",
-    });
   }
+
+  return res.status(500).json({
+    success: false,
+    message: err.message,
+  });
+}
 };
 
 /**
