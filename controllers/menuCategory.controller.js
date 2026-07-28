@@ -23,13 +23,8 @@ const categoryInclude = {
 
 export const createMenuCategory = async (req, res) => {
   try {
-    const {
-      hotel_id,
-      category_name,
-      description,
-      display_order,
-      is_active,
-    } = req.body;
+    const { hotel_id, category_name, description, display_order, is_active } =
+      req.body;
 
     const categoryName =
       typeof category_name === "string" ? category_name.trim() : "";
@@ -77,10 +72,19 @@ export const createMenuCategory = async (req, res) => {
       data: category,
     });
   } catch (error) {
-    console.error("Create menu category error:", error);
+    console.error("========== CREATE MENU CATEGORY ERROR ==========");
+    console.error("Name:", error.name);
+    console.error("Message:", error.message);
+    console.error("Parent:", error.parent?.message);
+    console.error("SQL:", error.sql);
+    console.error("Fields:", error.fields);
+    console.error("Errors:", error.errors);
+    console.error(error);
+
     return res.status(500).json({
       success: false,
-      message: "Failed to create menu category.",
+      message: error.message,
+      error: error.parent?.message || error.message,
     });
   }
 };
@@ -91,7 +95,12 @@ export const getMenuCategories = async (req, res) => {
     page = Number(page);
     limit = Number(limit);
 
-    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1) {
+    if (
+      !Number.isInteger(page) ||
+      page < 1 ||
+      !Number.isInteger(limit) ||
+      limit < 1
+    ) {
       return res.status(400).json({
         success: false,
         message: "page and limit must be positive integers.",
@@ -186,7 +195,7 @@ export const updateMenuCategory = async (req, res) => {
     const updates = Object.fromEntries(
       allowedFields
         .filter((field) => req.body[field] !== undefined)
-        .map((field) => [field, req.body[field]])
+        .map((field) => [field, req.body[field]]),
     );
 
     if (updates.category_name !== undefined) {
@@ -206,7 +215,10 @@ export const updateMenuCategory = async (req, res) => {
     }
 
     const hotelId = updates.hotel_id ?? category.hotel_id;
-    if (updates.hotel_id !== undefined && !(await HotelTable.findByPk(hotelId))) {
+    if (
+      updates.hotel_id !== undefined &&
+      !(await HotelTable.findByPk(hotelId))
+    ) {
       return res.status(404).json({
         success: false,
         message: "Hotel not found.",
@@ -281,4 +293,3 @@ export const deleteMenuCategory = async (req, res) => {
     });
   }
 };
-
