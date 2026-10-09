@@ -1,5 +1,7 @@
 import { DataTypes, Sequelize } from "sequelize";
 import dotenv from "dotenv";
+import { ORDER_STATUS } from "../utils/orderStatus.js";
+import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
 
 dotenv.config();
 
@@ -240,6 +242,37 @@ const prepareMenuSpiceLevel = async () => {
   `);
 };
 
+// Dining statuses the API relies on (see utils/reservationStatus.js). Only
+// missing rows are inserted, so names/colours edited in the DB are kept.
+const REQUIRED_DINING_STATUSES = [
+  { status_id: 7, name: "SERVING", color_code: "#8B5CF6" },
+];
+
+// prepareStatusMasterTable() fills missing names with "STATUS_<id>". Replace
+// those placeholders with the real names from utils/; names someone has
+// actually edited are left alone.
+const fixPlaceholderStatusNames = async (tableName, statuses) => {
+  for (const [name, statusId] of Object.entries(statuses)) {
+    await sequelize.query(
+      `UPDATE "${tableName}"
+       SET "name" = :name, "updated_at" = NOW()
+       WHERE "status_id" = :statusId AND "name" ~ '^STATUS_[0-9]+$'`,
+      { replacements: { name, statusId } },
+    );
+  }
+};
+
+const ensureDiningStatuses = async () => {
+  for (const status of REQUIRED_DINING_STATUSES) {
+    await sequelize.query(
+      `INSERT INTO "dining_status" ("status_id", "name", "color_code", "created_at", "updated_at")
+       VALUES (:status_id, :name, :color_code, NOW(), NOW())
+       ON CONFLICT ("status_id") DO NOTHING`,
+      { replacements: status },
+    );
+  }
+};
+
 export const connectDB = async () => {
   try {
     await sequelize.authenticate();
@@ -252,6 +285,10 @@ export const connectDB = async () => {
 
     // Uncomment only if you want Sequelize to create/update tables
     await sequelize.sync({ alter: true });
+
+    await ensureDiningStatuses();
+    await fixPlaceholderStatusNames("order_status_master", ORDER_STATUS);
+    await fixPlaceholderStatusNames("payment_status_master", PAYMENT_STATUS);
 
     console.log("All models synchronized");
   } catch (error) {

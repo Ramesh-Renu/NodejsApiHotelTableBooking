@@ -6,4 +6,5 @@ export const RESERVATION_STATUS = Object.freeze({
   COMPLETED: 3,
   CANCELLED: 4,
   CLEANING: 6,
+  SERVING: 7,
 });

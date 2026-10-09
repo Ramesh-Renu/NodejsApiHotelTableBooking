@@ -530,6 +530,7 @@ export const getDashboardSummary = async (req, res) => {
           created: periodReservations.length,
           confirmed: countStatus(RESERVATION_STATUS.CONFIRMED),
           seated: countStatus(RESERVATION_STATUS.SEATED),
+          serving: countStatus(RESERVATION_STATUS.SERVING),
           completed: countStatus(RESERVATION_STATUS.COMPLETED),
           cancelled: countStatus(RESERVATION_STATUS.CANCELLED),
           pending: countStatus(RESERVATION_STATUS.PENDING),
@@ -707,6 +708,7 @@ export const updateDiningStatus = async (req, res) => {
       [RESERVATION_STATUS.COMPLETED]: SEAT_STATUS.AVAILABLE, // 4 → 4
       [RESERVATION_STATUS.CANCELLED]: SEAT_STATUS.AVAILABLE, // 5 → 4
       [RESERVATION_STATUS.CLEANING]: SEAT_STATUS.CLEANING, // 6 → 3
+      [RESERVATION_STATUS.SERVING]: SEAT_STATUS.SEATED, // 7 → 5
     };
     const seatStatusToUpdate = RESERVATION_TO_SEAT_MAP[dining_status];
 console.log('seatStatusToUpdate',seatStatusToUpdate);

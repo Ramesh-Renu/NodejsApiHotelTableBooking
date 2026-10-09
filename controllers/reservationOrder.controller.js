@@ -11,18 +11,50 @@ import { ORDER_STATUS } from "../utils/orderStatus.js";
 import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
 
 export const createOrder = async (req, res) => {
+  const { reservationId } = req.params;
+
+  const reservationIdNumber = Number(reservationId);
+  if (!Number.isInteger(reservationIdNumber) || reservationIdNumber <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "A valid reservationId is required in the URL path.",
+    });
+  }
+
   const transaction = await sequelize.transaction();
 
   try {
-    const { reservationId } = req.params;
-
     const { hotel_id, notes, items } = req.body;
 
-    if (!items || !items.length) {
+    if (!hotel_id) {
+      return res.status(400).json({
+        success: false,
+        message: "hotel_id is required.",
+      });
+    }
+
+    if (!items || !Array.isArray(items) || !items.length) {
       return res.status(400).json({
         success: false,
         message: "Order items are required.",
       });
+    }
+
+    for (const item of items) {
+      if (!item.menu_id) {
+        return res.status(400).json({
+          success: false,
+          message: "Each order item must include menu_id.",
+        });
+      }
+
+      const quantity = Number(item.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Each order item must include a valid quantity.",
+        });
+      }
     }
 
     const reservation = await Reservation.findByPk(reservationId, {
@@ -178,15 +210,23 @@ export const getOrders = async (req, res) => {
       ];
     }
 
+    const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+
+    const reservationInclude = {
+      model: Reservation,
+      as: "reservation",
+      attributes: ["id", "user_id", "dining_status"],
+    };
+
+    if (!isAdmin) {
+      reservationInclude.where = { user_id: req.user.id };
+    }
+
     const { rows, count } = await ReservationOrder.findAndCountAll({
       where,
 
       include: [
-        {
-          model: Reservation,
-          as: "reservation",
-          attributes: ["id", "user_id", "dining_status"],
-        },
+        reservationInclude,
 
         {
           model: HotelTable,
