@@ -5,6 +5,12 @@ import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
 
 dotenv.config();
 
+// Hosted databases (Neon) only accept SSL connections; a local PostgreSQL
+// usually has SSL off. DB_SSL=true/false overrides the host check.
+const useSsl = process.env.DB_SSL
+  ? process.env.DB_SSL === "true"
+  : /neon\.tech$/i.test(process.env.DB_HOST || "");
+
 export const sequelize = new Sequelize(
   process.env.DB_NAME,
   process.env.DB_USER,
@@ -15,12 +21,9 @@ export const sequelize = new Sequelize(
     dialect: "postgres",
     timezone: "+05:30",
     logging: false,
-    // dialectOptions: {
-    //   ssl: {
-    //     require: true,
-    //     rejectUnauthorized: false,
-    //   },
-    // },
+    dialectOptions: useSsl
+      ? { ssl: { require: true, rejectUnauthorized: false } }
+      : {},
   }
 );
 
