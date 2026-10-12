@@ -23,7 +23,7 @@
 --   5. Reservations           server_id, cleaner_id, guest_count
 --   6. Orders                 optional reservation, owner, cook/server, end times
 --   7. Order items            cook per dish
---   8. Status rows            order DELIVERED (8), dining SERVING (7)
+--   8. Status rows            all order (1-8) and dining (1-7) statuses
 --   9. Data backfills         table codes, order owners, Completed -> Served/Delivered
 --  10. Checks
 -- =============================================================================
@@ -153,19 +153,45 @@ ALTER TABLE "reservation_orders" ADD COLUMN IF NOT EXISTS "delivered_at" TIMESTA
 ALTER TABLE "reservation_order_items" ADD COLUMN IF NOT EXISTS "cook_id" INTEGER;
 
 -- -----------------------------------------------------------------------------
--- 8. Order status DELIVERED (8): final stage for orders without a booking.
---    The table's "id" has no sequence in older databases, so pick the next id.
+-- 8. Status master rows: every order and dining status the app uses.
+--    Only missing rows are added (existing names/colours are kept). The
+--    tables' "id" has no sequence in older databases, so ids continue
+--    after the current highest id.
 -- -----------------------------------------------------------------------------
 INSERT INTO "order_status_master" ("id", "status_id", "name", "color_code", "created_at", "updated_at")
-SELECT COALESCE(MAX("id"), 0) + 1, 8, 'DELIVERED', '#0EA5E9', NOW(), NOW()
-FROM "order_status_master"
-WHERE NOT EXISTS (SELECT 1 FROM "order_status_master" WHERE "status_id" = 8);
+SELECT (SELECT COALESCE(MAX("id"), 0) FROM "order_status_master")
+         + row_number() OVER (ORDER BY v.status_id),
+       v.status_id, v.name, v.color_code, NOW(), NOW()
+FROM (VALUES
+  (1, 'ORDERED',   '#6366F1'),
+  (2, 'ACCEPTED',  '#0EA5E9'),
+  (3, 'PREPARING', '#F59E0B'),
+  (4, 'READY',     '#14B8A6'),
+  (5, 'SERVED',    '#8B5CF6'),
+  (6, 'COMPLETED', '#22C55E'),  -- legacy, hidden on the board
+  (7, 'CANCELLED', '#EF4444'),
+  (8, 'DELIVERED', '#0EA5E9')   -- final stage for orders without a booking
+) AS v(status_id, name, color_code)
+WHERE NOT EXISTS (
+  SELECT 1 FROM "order_status_master" s WHERE s."status_id" = v.status_id
+);
 
--- Dining status SERVING (7): reservation stage between Seated and Cleaning.
 INSERT INTO "dining_status" ("id", "status_id", "name", "color_code", "created_at", "updated_at")
-SELECT COALESCE(MAX("id"), 0) + 1, 7, 'SERVING', '#8B5CF6', NOW(), NOW()
-FROM "dining_status"
-WHERE NOT EXISTS (SELECT 1 FROM "dining_status" WHERE "status_id" = 7);
+SELECT (SELECT COALESCE(MAX("id"), 0) FROM "dining_status")
+         + row_number() OVER (ORDER BY v.status_id),
+       v.status_id, v.name, v.color_code, NOW(), NOW()
+FROM (VALUES
+  (1, 'CONFIRMED', '#6366F1'),
+  (2, 'SEATED',    '#0EA5E9'),
+  (3, 'COMPLETED', '#22C55E'),
+  (4, 'CANCELLED', '#EF4444'),
+  (5, 'PENDING',   '#F59E0B'),
+  (6, 'CLEANING',  '#14B8A6'),
+  (7, 'SERVING',   '#8B5CF6')   -- between Seated and Cleaning
+) AS v(status_id, name, color_code)
+WHERE NOT EXISTS (
+  SELECT 1 FROM "dining_status" s WHERE s."status_id" = v.status_id
+);
 
 -- -----------------------------------------------------------------------------
 -- 9. Data backfills

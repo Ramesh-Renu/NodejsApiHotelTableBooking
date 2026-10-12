@@ -248,6 +248,12 @@ const prepareMenuSpiceLevel = async () => {
 // Dining statuses the API relies on (see utils/reservationStatus.js). Only
 // missing rows are inserted, so names/colours edited in the DB are kept.
 const REQUIRED_DINING_STATUSES = [
+  { status_id: 1, name: "CONFIRMED", color_code: "#6366F1" },
+  { status_id: 2, name: "SEATED", color_code: "#0EA5E9" },
+  { status_id: 3, name: "COMPLETED", color_code: "#22C55E" },
+  { status_id: 4, name: "CANCELLED", color_code: "#EF4444" },
+  { status_id: 5, name: "PENDING", color_code: "#F59E0B" },
+  { status_id: 6, name: "CLEANING", color_code: "#14B8A6" },
   { status_id: 7, name: "SERVING", color_code: "#8B5CF6" },
 ];
 
@@ -265,9 +271,16 @@ const fixPlaceholderStatusNames = async (tableName, statuses) => {
   }
 };
 
-// Order statuses added after the master table was seeded. Only missing rows
-// are inserted, so names/colours edited in the DB are kept.
+// Order statuses the API relies on (see utils/orderStatus.js). Only missing
+// rows are inserted, so names/colours edited in the DB are kept.
 const REQUIRED_ORDER_STATUSES = [
+  { status_id: 1, name: "ORDERED", color_code: "#6366F1" },
+  { status_id: 2, name: "ACCEPTED", color_code: "#0EA5E9" },
+  { status_id: 3, name: "PREPARING", color_code: "#F59E0B" },
+  { status_id: 4, name: "READY", color_code: "#14B8A6" },
+  { status_id: 5, name: "SERVED", color_code: "#8B5CF6" },
+  { status_id: 6, name: "COMPLETED", color_code: "#22C55E" },
+  { status_id: 7, name: "CANCELLED", color_code: "#EF4444" },
   { status_id: 8, name: "DELIVERED", color_code: "#0EA5E9" },
 ];
 
