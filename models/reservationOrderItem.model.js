@@ -75,6 +75,12 @@ const ReservationOrderItem = sequelize.define(
       comment: "Less spicy, No onion, etc.",
     },
 
+    // Cook preparing this item (defaults to the order's cook on accept).
+    cook_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
     item_status: {
       type: DataTypes.INTEGER,
       allowNull: false,

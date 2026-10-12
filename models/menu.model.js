@@ -41,10 +41,12 @@ const Menu = sequelize.define(
       },
     },
 
+    // Optional; unique per hotel (see indexes below). A column-level
+    // `unique: true` made sync({ alter: true }) add a new constraint on every
+    // boot (menus_menu_code_key, _key1, ... _key144).
     menu_code: {
       type: DataTypes.STRING(30),
       allowNull: true,
-      unique: true,
     },
 
     description: {
@@ -116,6 +118,13 @@ const Menu = sequelize.define(
   {
     tableName: "menus",
     timestamps: true,
+    indexes: [
+      {
+        name: "menus_hotel_id_menu_code_unique",
+        unique: true,
+        fields: ["hotel_id", "menu_code"],
+      },
+    ],
   },
 );
 

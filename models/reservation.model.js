@@ -18,6 +18,12 @@ const Reservation = sequelize.define(
     dining_date: { type: DataTypes.DATE, allowNull: false },
 
     dining_status: { type: DataTypes.INTEGER, defaultValue: 1 },
+    // Server looking after the table, chosen when the booking is confirmed.
+    server_id: { type: DataTypes.INTEGER, allowNull: true },
+    // Cleaner assigned when the table goes to Cleaning.
+    cleaner_id: { type: DataTypes.INTEGER, allowNull: true },
+    // Party size chosen in the slot picker.
+    guest_count: { type: DataTypes.INTEGER, allowNull: true },
   },
   {
     tableName: "reservations",

@@ -10,18 +10,39 @@ import MenuSideDishMapping from "../models/menuSideDishMapping.model.js";
 import sequelize from "../config/db.js";
 import MenuSideDish from "../models/menuSideDish.model.js";
 
-const transaction = await sequelize.transaction();
+// Menu codes are optional and unique within a hotel (case-insensitive).
+const normalizeMenuCode = (code) =>
+  typeof code === "string" && code.trim() ? code.trim() : null;
+
+const findMenuCodeClash = (hotelId, code, exceptMenuId) =>
+  Menu.findOne({
+    where: {
+      hotel_id: hotelId,
+      ...(exceptMenuId ? { id: { [Op.ne]: exceptMenuId } } : {}),
+      [Op.and]: [where(fn("lower", col("menu_code")), code.toLowerCase())],
+    },
+    attributes: ["id", "menu_name", "menu_code"],
+  });
+
+const menuCodeTaken = (code, clash) => ({
+  success: false,
+  message: `Menu code "${code}" is already used by "${clash.menu_name}" in this hotel.`,
+});
+
+const isUniqueError = (error) =>
+  error?.name === "SequelizeUniqueConstraintError";
 
 /**
  * Create Menu
  */
 export const createMenu = async (req, res) => {
+  let transaction;
   try {
     const {
       hotel_id,
       category_id,
       menu_name,
-      menu_code,
+      menu_code: rawMenuCode,
       description,
       price,
       preparation_time,
@@ -124,6 +145,13 @@ export const createMenu = async (req, res) => {
       });
     }
 
+    const menu_code = normalizeMenuCode(rawMenuCode);
+    if (menu_code) {
+      const clash = await findMenuCodeClash(hotel_id, menu_code);
+      if (clash) return res.status(409).json(menuCodeTaken(menu_code, clash));
+    }
+
+    transaction = await sequelize.transaction();
     const menu = await Menu.create(
       {
         hotel_id,
@@ -162,7 +190,13 @@ export const createMenu = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    await transaction.rollback();
+    if (transaction) await transaction.rollback();
+    if (isUniqueError(error)) {
+      return res.status(409).json({
+        success: false,
+        message: "This menu code is already in use. Please choose another.",
+      });
+    }
     return res.status(500).json({
       success: false,
       message: "Failed to create menu.",
@@ -406,6 +440,20 @@ export const updateMenu = async (req, res) => {
 
     const { side_dishes = [], ...updates } = req.body;
 
+    if (updates.menu_code !== undefined) {
+      updates.menu_code = normalizeMenuCode(updates.menu_code);
+    }
+    const codeToCheck =
+      updates.menu_code !== undefined ? updates.menu_code : menu.menu_code;
+    if (codeToCheck) {
+      const clash = await findMenuCodeClash(
+        updates.hotel_id ?? menu.hotel_id,
+        codeToCheck,
+        menu.id,
+      );
+      if (clash) return res.status(409).json(menuCodeTaken(codeToCheck, clash));
+    }
+
     if (updates.spice_level !== undefined) {
       const spiceLevelId = Number(updates.spice_level);
       if (!Number.isInteger(spiceLevelId) || spiceLevelId < 1) {
@@ -447,6 +495,12 @@ export const updateMenu = async (req, res) => {
       data: menu,
     });
   } catch (error) {
+    if (isUniqueError(error)) {
+      return res.status(409).json({
+        success: false,
+        message: "This menu code is already in use. Please choose another.",
+      });
+    }
     return res.status(500).json({
       success: false,
       message: error.message,

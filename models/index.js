@@ -6,6 +6,9 @@ import Reservation from "./reservation.model.js";
 import MenuCategory from "./menuCategory.model.js";
 import Menu from "./menu.model.js";
 import ReservationOrder from "./reservationOrder.model.js";
+import Cook from "./cook.model.js";
+import Server from "./server.model.js";
+import Cleaner from "./cleaner.model.js";
 import ReservationOrderItem from "./reservationOrderItem.model.js";
 import OrderStatusMaster from "./orderStatusMaster.model.js";
 import PaymentStatusMaster from "./paymentStatusMaster.model.js";
@@ -130,6 +133,65 @@ HotelTable.hasMany(ReservationOrder, {
 ReservationOrder.belongsTo(HotelTable, {
     foreignKey: "hotel_id",
     as: "hotel",
+});
+
+/* ==========================================================
+   ORDER ↔ COOK (assigned on accept), COOK ↔ HOTEL (optional)
+   No DB constraints: cook_id / hotel_id are nullable and checked in code.
+   ========================================================== */
+ReservationOrder.belongsTo(Cook, {
+    foreignKey: "cook_id",
+    as: "cook",
+    constraints: false,
+});
+Cook.hasMany(ReservationOrder, {
+    foreignKey: "cook_id",
+    as: "orders",
+    constraints: false,
+});
+Cook.belongsTo(HotelTable, {
+    foreignKey: "hotel_id",
+    as: "hotel",
+    constraints: false,
+});
+
+/* RESERVATION ↔ SERVER (chosen when confirmed); ORDER ITEM ↔ COOK */
+Reservation.belongsTo(Server, {
+    foreignKey: "server_id",
+    as: "server",
+    constraints: false,
+});
+Reservation.belongsTo(Cleaner, {
+    foreignKey: "cleaner_id",
+    as: "cleaner",
+    constraints: false,
+});
+Cleaner.belongsTo(HotelTable, {
+    foreignKey: "hotel_id",
+    as: "hotel",
+    constraints: false,
+});
+ReservationOrderItem.belongsTo(Cook, {
+    foreignKey: "cook_id",
+    as: "cook",
+    constraints: false,
+});
+
+/* ORDER ↔ SERVER (assigned when served), SERVER ↔ HOTEL (optional) */
+ReservationOrder.belongsTo(Server, {
+    foreignKey: "server_id",
+    as: "server",
+    constraints: false,
+});
+Server.hasMany(ReservationOrder, {
+    foreignKey: "server_id",
+    as: "orders",
+    constraints: false,
+});
+Server.belongsTo(HotelTable, {
+    foreignKey: "hotel_id",
+    as: "hotel",
+    constraints: false,
 });
 
 ReservationOrder.hasMany(ReservationOrderItem, {

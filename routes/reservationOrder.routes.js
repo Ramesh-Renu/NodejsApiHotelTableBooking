@@ -1,5 +1,6 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizeRoles } from "../middlewares/role.middleware.js";
 
 import {
   createOrder,
@@ -8,6 +9,7 @@ import {
   getReservationOrders,
   updateOrder,
   updateOrderStatus,
+  updateOrderItems,
   updatePaymentStatus,
   cancelOrder,
 } from "../controllers/reservationOrder.controller.js";
@@ -90,11 +92,14 @@ const router = express.Router();
  *         description: Server error
  */
 router.post("/reservation/:reservationId", authenticate, createOrder);
+// Order from the menu without a table booking (body: hotel_id, items).
+router.post("/", authenticate, createOrder);
 router.get("/reservation/:reservationId", authenticate, getReservationOrders);
 router.get("/", authenticate, getOrders);
 router.get("/:id", authenticate, getOrderById);
 router.put("/:id", authenticate, updateOrder);
 router.patch("/:id/status", authenticate, updateOrderStatus);
+router.put("/:id/items", authenticate, authorizeRoles("Admin"), updateOrderItems);
 router.patch("/:id/payment", authenticate, updatePaymentStatus);
 router.patch("/:id/cancel", authenticate, cancelOrder);
 

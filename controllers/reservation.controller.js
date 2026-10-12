@@ -10,6 +10,16 @@ import RegisterUsersData from "../models/user.model.js";
 import Table from "../models/table.model.js";
 
 import { Op } from "sequelize";
+import Server from "../models/server.model.js";
+import Cleaner from "../models/cleaner.model.js";
+import { findAssignableStaff } from "../utils/staffController.js";
+import { attachTableCodes } from "../utils/reservationTables.js";
+import {
+  getHeldSeats,
+  parseSlot,
+  slotEndTime,
+  slotIsLive,
+} from "../utils/slotAvailability.js";
 
 const ISO_DATE = "YYYY-MM-DD";
 const formatDateKey = (date) => {
@@ -175,6 +185,7 @@ export const createReservation = async (req, res) => {
       // booking_date,
       dining_date,
       reservation_time,
+      guest_count,
     } = req.body;
 
     /* ---------------- BASIC VALIDATION ---------------- */
@@ -215,21 +226,48 @@ export const createReservation = async (req, res) => {
       });
     }
 
-    /* ---------------- LOCK & VALIDATE SEATS ---------------- */
-    const availableSeats = await Seat.findAll({
-      where: {
-        id: seatIds,
-        status: SEAT_STATUS.AVAILABLE,
-      },
-      transaction,
-      lock: transaction.LOCK.UPDATE, // 🔐 prevents race condition
-    });
-
-    if (availableSeats.length !== seatIds.length) {
+    /* ---------------- SLOT ---------------- */
+    // dining_date "YYYY-MM-DD" + reservation_time "HH:mm"; an ISO dining_date
+    // (older clients) uses its date part.
+    const slotStart = parseSlot(dining_date, reservation_time);
+    if (!slotStart) {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: "One or more seats are already booked",
+        message: "Choose a valid date and time slot.",
+      });
+    }
+    if (slotStart.getTime() < Date.now() - 15 * 60 * 1000) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "That time slot has already passed. Pick a later slot.",
+      });
+    }
+
+    // One booking at a time per hotel, so two guests can't take the same
+    // seats for overlapping slots.
+    await sequelize.query("SELECT pg_advisory_xact_lock(:key)", {
+      replacements: { key: Number(hotel_id) },
+      transaction,
+    });
+
+    /* ---------------- VALIDATE SEATS FOR THE SLOT ---------------- */
+    const held = await getHeldSeats(hotel_id, slotStart, { transaction });
+    const live = slotIsLive(slotStart);
+    const liveBlocked = live
+      ? await Seat.findAll({
+          where: { id: seatIds, status: { [Op.ne]: SEAT_STATUS.AVAILABLE } },
+          attributes: ["id"],
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        })
+      : [];
+    if (seatIds.some((id) => held.has(Number(id))) || liveBlocked.length > 0) {
+      await transaction.rollback();
+      return res.status(409).json({
+        success: false,
+        message: "One or more seats are already booked for this time. Pick other seats or another slot.",
       });
     }
 
@@ -239,12 +277,14 @@ export const createReservation = async (req, res) => {
         user_id: authUserId,
         hotel_id,
         floor_id,
-        start_time: reservation_time,
+        start_time: String(reservation_time).slice(0, 5),
+        end_time: slotEndTime(reservation_time),
+        guest_count: Number(guest_count) || null,
         seat_status,
         customer_name,
         customer_mobile,
         dining_status: RESERVATION_STATUS.CONFIRMED, // <-- default value
-        dining_date: dining_date,
+        dining_date: slotStart,
       },
       { transaction },
     );
@@ -252,20 +292,25 @@ export const createReservation = async (req, res) => {
     const reservationId = reservation.id;
 
     /* ---------------- UPDATE SEATS ---------------- */
-    await Seat.update(
-      {
-        status: SEAT_STATUS.BOOKED,
-        reservation_id: reservationId,
-        isActive: true,
-      },
-      {
-        where: {
-          id: seatIds,
-          status: SEAT_STATUS.AVAILABLE, // ✅ critical guard
+    // Only a booking for now / the next hour changes the live seat status;
+    // later bookings show up through slot availability, so the seats stay
+    // free for walk-ins until then.
+    if (live) {
+      await Seat.update(
+        {
+          status: SEAT_STATUS.BOOKED,
+          reservation_id: reservationId,
+          isActive: true,
         },
-        transaction,
-      },
-    );
+        {
+          where: {
+            id: seatIds,
+            status: SEAT_STATUS.AVAILABLE, // ✅ critical guard
+          },
+          transaction,
+        },
+      );
+    }
     /* ---------------- COMMIT ---------------- */
     await transaction.commit();
 
@@ -539,7 +584,7 @@ export const getDashboardSummary = async (req, res) => {
           aggregation,
           points: trend,
         },
-        recent,
+        recent: await attachTableCodes(recent),
       },
     });
   } catch (error) {
@@ -595,12 +640,25 @@ export const getReservations = async (req, res) => {
           as: "floor",
           attributes: ["id", "floor_number"],
         },
+        {
+          model: Server,
+          as: "server",
+          attributes: ["id", "server_name", "section", "photo_url"],
+          required: false,
+        },
+        {
+          model: Cleaner,
+          as: "cleaner",
+          attributes: ["id", "cleaner_name", "shift", "photo_url"],
+          required: false,
+        },
       ],
     });
 
     return res.json({
       success: true,
-      data: reservations,
+      // seat_status entries also carry table_code (e.g. "SACT0001").
+      data: await attachTableCodes(reservations),
     });
   } catch (error) {
     console.error("Get reservations error:", error);
@@ -710,6 +768,20 @@ export const updateDiningStatus = async (req, res) => {
       [RESERVATION_STATUS.CLEANING]: SEAT_STATUS.CLEANING, // 6 → 3
       [RESERVATION_STATUS.SERVING]: SEAT_STATUS.SEATED, // 7 → 5
     };
+    // Seated / Serving only once the booking time has come (15 min grace).
+    const EARLY_ARRIVAL_MS = 15 * 60 * 1000;
+    if (
+      [RESERVATION_STATUS.SEATED, RESERVATION_STATUS.SERVING].includes(Number(dining_status)) &&
+      reservation.dining_date &&
+      new Date(reservation.dining_date).getTime() - EARLY_ARRIVAL_MS > Date.now()
+    ) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "This booking isn't due yet. Guests can be seated from 15 minutes before the booked time.",
+      });
+    }
+
     const seatStatusToUpdate = RESERVATION_TO_SEAT_MAP[dining_status];
 console.log('seatStatusToUpdate',seatStatusToUpdate);
 
@@ -721,8 +793,34 @@ console.log('seatStatusToUpdate',seatStatusToUpdate);
       });
     }
 
+    /* ---------- STAFF (optional): server on confirm, cleaner on cleaning ---------- */
+    const reservationUpdate = { dining_status };
+    const staffFields = [
+      { field: "server_id", Model: Server, nameField: "server_name", label: "server" },
+      { field: "cleaner_id", Model: Cleaner, nameField: "cleaner_name", label: "cleaner" },
+    ];
+    for (const { field, Model, nameField, label } of staffFields) {
+      const value = req.body[field];
+      if (value === undefined) continue;
+      if (value === null || value === "") {
+        reservationUpdate[field] = null;
+        continue;
+      }
+      const { staff, error } = await findAssignableStaff(
+        Model,
+        value,
+        reservation.hotel_id,
+        { nameField, label },
+      );
+      if (error) {
+        await transaction.rollback();
+        return res.status(400).json({ success: false, message: error });
+      }
+      reservationUpdate[field] = staff.id;
+    }
+
     /* ---------------- UPDATE RESERVATION ---------------- */
-    await reservation.update({ dining_status }, { transaction });
+    await reservation.update(reservationUpdate, { transaction });
 
     /* ---------------- UPDATE SEATS ---------------- */
     const seatUpdatePayload =

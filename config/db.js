@@ -262,14 +262,104 @@ const fixPlaceholderStatusNames = async (tableName, statuses) => {
   }
 };
 
-const ensureDiningStatuses = async () => {
-  for (const status of REQUIRED_DINING_STATUSES) {
+// Order statuses added after the master table was seeded. Only missing rows
+// are inserted, so names/colours edited in the DB are kept.
+const REQUIRED_ORDER_STATUSES = [
+  { status_id: 8, name: "DELIVERED", color_code: "#0EA5E9" },
+];
+
+// Inserts master rows that are missing. These tables' "id" column has no
+// sequence in older databases (it was added after the rows existed), so the
+// next id is chosen here. A failure is logged, not fatal: the app runs
+// without the extra status until it is fixed.
+const ensureStatusRows = async (tableName, statuses) => {
+  for (const status of statuses) {
+    try {
+      await sequelize.query(
+        `INSERT INTO "${tableName}" ("id", "status_id", "name", "color_code", "created_at", "updated_at")
+         SELECT COALESCE(MAX("id"), 0) + 1, :status_id, :name, :color_code, NOW(), NOW()
+         FROM "${tableName}"
+         WHERE NOT EXISTS (
+           SELECT 1 FROM "${tableName}" WHERE "status_id" = :status_id
+         )`,
+        { replacements: status },
+      );
+    } catch (error) {
+      console.warn(
+        `Could not add ${status.name} to ${tableName}: ${error.message}`,
+      );
+    }
+  }
+};
+
+const ensureOrderStatuses = () =>
+  ensureStatusRows("order_status_master", REQUIRED_ORDER_STATUSES);
+
+const ensureDiningStatuses = () =>
+  ensureStatusRows("dining_status", REQUIRED_DINING_STATUSES);
+
+// menu_code used to be unique across all hotels; it is now unique per hotel
+// (index menus_hotel_id_menu_code_unique). Drop the old global constraints,
+// including the copies sync({ alter: true }) piled up (…_key1, …_key144).
+const dropGlobalMenuCodeUnique = async () => {
+  const [rows] = await sequelize.query(`
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = to_regclass('public.menus')
+      AND contype = 'u'
+      AND conname ~ '^menus_menu_code_key[0-9]*$'
+  `);
+  for (const { conname } of rows) {
+    await sequelize.query(`ALTER TABLE "menus" DROP CONSTRAINT "${conname}"`);
+  }
+  if (rows.length) {
+    console.log(`Dropped ${rows.length} global menu_code unique constraint(s)`);
+  }
+};
+
+// Columns declared with `unique: true` get one more "<table>_<col>_keyN"
+// constraint on every sync({ alter: true }). Keep the first of each and drop
+// the rest. A copy something else depends on is skipped.
+const dropDuplicateUniqueConstraints = async () => {
+  const [rows] = await sequelize.query(`
+    SELECT conrelid::regclass::text AS table_name, conname,
+           row_number() OVER (
+             PARTITION BY conrelid, conkey
+             ORDER BY length(conname), conname
+           ) AS copy_no
+    FROM pg_constraint
+    WHERE contype = 'u'
+      AND connamespace = 'public'::regnamespace
+      AND conname ~ '_key[0-9]*$'
+  `);
+  let dropped = 0;
+  for (const { table_name, conname, copy_no } of rows) {
+    if (Number(copy_no) === 1) continue;
+    try {
+      await sequelize.query(
+        `ALTER TABLE ${table_name} DROP CONSTRAINT "${conname}"`,
+      );
+      dropped += 1;
+    } catch (error) {
+      console.warn(`Kept ${conname}: ${error.message}`);
+    }
+  }
+  if (dropped) console.log(`Dropped ${dropped} duplicate unique constraint(s)`);
+};
+
+// Orders can be placed without a table booking, but sync({ alter: true })
+// does not drop NOT NULL from the existing reservation_id column. Do it here.
+const allowOrdersWithoutReservation = async () => {
+  const [rows] = await sequelize.query(`
+    SELECT is_nullable FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'reservation_orders'
+      AND column_name = 'reservation_id'
+  `);
+  if (rows[0]?.is_nullable === "NO") {
     await sequelize.query(
-      `INSERT INTO "dining_status" ("status_id", "name", "color_code", "created_at", "updated_at")
-       VALUES (:status_id, :name, :color_code, NOW(), NOW())
-       ON CONFLICT ("status_id") DO NOTHING`,
-      { replacements: status },
+      `ALTER TABLE "reservation_orders" ALTER COLUMN "reservation_id" DROP NOT NULL`,
     );
+    console.log("reservation_orders.reservation_id is now optional");
   }
 };
 
@@ -282,11 +372,15 @@ export const connectDB = async () => {
     await prepareStatusMasterTable("payment_status_master");
     await prepareSpiceLevelTable();
     await prepareMenuSpiceLevel();
+    await dropGlobalMenuCodeUnique();
 
     // Uncomment only if you want Sequelize to create/update tables
     await sequelize.sync({ alter: true });
+    await dropDuplicateUniqueConstraints();
+    await allowOrdersWithoutReservation();
 
     await ensureDiningStatuses();
+    await ensureOrderStatuses();
     await fixPlaceholderStatusNames("order_status_master", ORDER_STATUS);
     await fixPlaceholderStatusNames("payment_status_master", PAYMENT_STATUS);
 

@@ -4,6 +4,8 @@ import Table from "../models/table.model.js";
 import Seat from "../models/seat.model.js";
 import Reservation from "../models/reservation.model.js";
 import { SEAT_STATUS } from "../utils/seatStatus.js";
+import { assignMissingTableCodes } from "../utils/tableCode.js";
+import { getHeldSeats, parseSlot, slotIsLive } from "../utils/slotAvailability.js";
 /**
  * CREATE tables for a hotel (Admin)
  */
@@ -56,6 +58,9 @@ export const createTablesForHotel = async (req, res) => {
     }
 
     await Table.bulkCreate(tables);
+
+    // New tables continue the hotel's code sequence (…0011, …0012).
+    await assignMissingTableCodes(hotel);
 
     return res.status(201).json({
       success: true,
@@ -124,6 +129,13 @@ export const getTablesByHotel = async (req, res) => {
       });
     }
 
+    /* ---------------- SLOT MODE (?date=YYYY-MM-DD&time=HH:mm) ---------------- */
+    // Seat status for a booking slot: held by an overlapping booking → booked;
+    // for a slot happening now, live states (seated / cleaning) also count.
+    const slotStart = parseSlot(req.query.date, req.query.time);
+    const heldSeats = slotStart ? await getHeldSeats(hotel.id, slotStart) : null;
+    const liveSlot = slotStart ? slotIsLive(slotStart) : true;
+
     /* ---------------- FETCH RESERVATIONS ---------------- */
     const reservations = await Reservation.findAll({
       where: { hotel_id: hotelTableId },
@@ -164,7 +176,21 @@ export const getTablesByHotel = async (req, res) => {
           const seats = (table.seats || []).map((seat) => {
             totalSeats++;
 
-            const isAvailable = seat.status === SEAT_STATUS.AVAILABLE;
+            let status = seat.status;
+            let slotUserId = null;
+            if (heldSeats) {
+              const held = heldSeats.get(Number(seat.id));
+              if (held) {
+                status = SEAT_STATUS.BOOKED;
+                slotUserId = held.user_id;
+              } else if (!liveSlot || seat.status === SEAT_STATUS.BOOKED) {
+                // A future slot only depends on bookings; a "booked" live seat
+                // not held by an overlapping booking is free for this slot.
+                status = SEAT_STATUS.AVAILABLE;
+              }
+            }
+
+            const isAvailable = status === SEAT_STATUS.AVAILABLE;
 
             if (isAvailable) {
               availableSeats++;
@@ -173,12 +199,12 @@ export const getTablesByHotel = async (req, res) => {
             return {
               seat_id: seat.id,
               seat_number: seat.seat_number,
-              status: seat.status,
+              status,
               isActive: seat.isActive,
               reservation_id: seat.reservation_id,
               user_id:
-                seat.status === SEAT_STATUS.BOOKED
-                  ? seatUserMap.get(Number(seat.id)) || null
+                status === SEAT_STATUS.BOOKED
+                  ? slotUserId ?? seatUserMap.get(Number(seat.id)) ?? null
                   : null,
             };
           });
@@ -190,6 +216,7 @@ export const getTablesByHotel = async (req, res) => {
           return {
             table_id: table.id,
             table_number: table.table_number,
+            table_code: table.table_code,
             isActive: table.isActive,
             seats,
           };
@@ -212,6 +239,10 @@ export const getTablesByHotel = async (req, res) => {
       data: [
         {
           hotel_table_id: hotel.id,
+          table_code_prefix: hotel.table_code_prefix,
+          slot: slotStart
+            ? { date: req.query.date, time: req.query.time, live: liveSlot }
+            : null,
           floors: floorsData,
         },
       ],

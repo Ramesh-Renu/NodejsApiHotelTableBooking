@@ -45,6 +45,14 @@ const HotelTable = sequelize.define(
         min: 1,
       },
     },
+
+    // Prefix for this hotel's table codes, e.g. SACT -> SACT0001. Unique per
+    // hotel; enforced in utils/tableCode.js (unique:true + sync alter adds a
+    // duplicate constraint on every boot in Postgres).
+    table_code_prefix: {
+      type: DataTypes.STRING(8),
+      allowNull: true,
+    },
   },
   {
     tableName: "hotel_tables",

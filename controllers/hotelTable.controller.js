@@ -7,6 +7,29 @@ import Reservation from "../models/reservation.model.js";
 import Location from "../models/location.model.js";
 import { Op } from "sequelize";
 import { sequelize } from "../config/db.js";
+import {
+  PREFIX_PATTERN,
+  normalizePrefix,
+  isPrefixTaken,
+  makeUniquePrefix,
+  suggestPrefixForHotel,
+  assignMissingTableCodes,
+  renameTableCodes,
+} from "../utils/tableCode.js";
+
+/**
+ * Validates an admin-entered table code prefix. Returns an error message, or
+ * null when the prefix is usable.
+ */
+const checkPrefix = async (prefix, exceptHotelId, transaction) => {
+  if (!PREFIX_PATTERN.test(prefix)) {
+    return "Table code prefix must be 2-8 letters or digits";
+  }
+  if (await isPrefixTaken(prefix, exceptHotelId, transaction)) {
+    return `Table code prefix "${prefix}" is already used by another hotel`;
+  }
+  return null;
+};
 
 const SEAT_STATUS = {
   BOOKED: 1,
@@ -27,6 +50,7 @@ export const createHotelTable = async (req, res) => {
       tables_per_floor,
       chairs_per_table,
       area_id,
+      table_code_prefix,
       ...hotelPayload
     } = req.body;
 
@@ -72,6 +96,24 @@ export const createHotelTable = async (req, res) => {
       });
     }
 
+    /* ---------------- table code prefix ---------------- */
+    // Admin-entered prefix must be valid and unused; otherwise suggest one
+    // from the hotel, location and area names.
+    let prefix = normalizePrefix(table_code_prefix);
+    if (prefix) {
+      const prefixError = await checkPrefix(prefix, null, t);
+      if (prefixError) {
+        await t.rollback();
+        return res.status(409).json({ success: false, message: prefixError });
+      }
+    } else {
+      const suggested = await suggestPrefixForHotel(
+        { ...hotelPayload, area_id },
+        t
+      );
+      prefix = await makeUniquePrefix(suggested, null, t);
+    }
+
     /* ---------------- create hotel ---------------- */
     const hotel = await HotelTable.create(
       {
@@ -80,6 +122,7 @@ export const createHotelTable = async (req, res) => {
         floor_per_hotel, // ✅ store count only
         tables_per_floor, // ✅ ADD THIS
         chairs_per_table, // ✅ ADD THIS
+        table_code_prefix: prefix,
       },
       { transaction: t }
     );
@@ -105,7 +148,7 @@ export const createHotelTable = async (req, res) => {
         tableRecords.push({
           hotel_table_id: hotel.id,
           floor_id: floor.id,
-          table_number: i + 1,
+          table_number: i,
         });
       }
     }
@@ -113,6 +156,9 @@ export const createHotelTable = async (req, res) => {
     const createdTables = await Table.bulkCreate(tableRecords, {
       transaction: t,
     });
+
+    // SACT0001, SACT0002 … continuous across floors.
+    await assignMissingTableCodes(hotel, t);
 
     /* ---------------- re-fetch tables safely ---------------- */
     const tablesForSeats = await Table.findAll({
@@ -146,6 +192,7 @@ export const createHotelTable = async (req, res) => {
       message: "Hotel created with floors, tables and seats",
       data: {
         hotel_id: hotel.id,
+        table_code_prefix: prefix,
         floor_per_hotel,
         floors_created: createdFloors.length,
         tables_created: createdTables.length,
@@ -219,7 +266,7 @@ export const getAllHotelTables = async (req, res) => {
     /* ---------------- fetch hotels ---------------- */
     const hotels = await HotelTable.findAll({
       where: hotelsWhere,
-      order: [["id", "ASC"]],
+      order: [["id", "DESC"]], // newest hotel first
     });
 
     /* ---------------- counts ---------------- */
@@ -248,6 +295,7 @@ export const getAllHotelTables = async (req, res) => {
           tables_per_floor: hotel.tables_per_floor,
           chairs_per_table: hotel.chairs_per_table,
           area_id: hotel.area_id,
+          table_code_prefix: hotel.table_code_prefix,
           floorCount,
           tableCount: tables.length,
           seatCount,
@@ -308,6 +356,7 @@ export const getHotelTableById = async (req, res) => {
       tables_per_floor: hotel.tables_per_floor,
       chairs_per_table: hotel.chairs_per_table,
       area_id: hotel.area_id,
+      table_code_prefix: hotel.table_code_prefix,
       floorCount,
       tableCount: tables.length,
       seatCount,
@@ -343,6 +392,7 @@ export const updateHotelTable = async (req, res) => {
       floor_per_hotel,
       tables_per_floor,
       chairs_per_table,
+      table_code_prefix,
     } = req.body;
 
     /* -----------------------------
@@ -361,6 +411,16 @@ export const updateHotelTable = async (req, res) => {
     /* -----------------------------
        2️⃣ Update hotel basic fields
     ------------------------------*/
+    const oldPrefix = hotel.table_code_prefix;
+    const newPrefix = normalizePrefix(table_code_prefix) || oldPrefix;
+    if (newPrefix && newPrefix !== oldPrefix) {
+      const prefixError = await checkPrefix(newPrefix, hotel.id, transaction);
+      if (prefixError) {
+        await transaction.rollback();
+        return res.status(409).json({ success: false, message: prefixError });
+      }
+    }
+
     await hotel.update(
       {
         hotel_name,
@@ -369,9 +429,13 @@ export const updateHotelTable = async (req, res) => {
         address,
         tables_per_floor,
         chairs_per_table,
+        table_code_prefix: newPrefix,
       },
       { transaction }
     );
+
+    // Existing codes follow the new prefix (SACT0003 -> SNCT0003).
+    await renameTableCodes(hotel.id, oldPrefix, newPrefix, transaction);
 
     /* -----------------------------
        3️⃣ SYNC FLOORS
@@ -509,6 +573,9 @@ export const updateHotelTable = async (req, res) => {
         }
       }
     }
+
+    // Tables added above continue the hotel's code sequence.
+    await assignMissingTableCodes(hotel, transaction);
 
     await transaction.commit();
 

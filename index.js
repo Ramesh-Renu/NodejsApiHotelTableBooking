@@ -24,12 +24,22 @@ import paymentStatusRoutes from "./routes/paymentStatusMaster.routes.js";
 import spiceLevelRoutes from "./routes/spiceLevelMaster.routes.js";
 import reservationOrderRoutes from "./routes/reservationOrder.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
+import cookRoutes from "./routes/cook.routes.js";
+import serverRoutes from "./routes/server.routes.js";
+import cleanerRoutes from "./routes/cleaner.routes.js";
 import menuSideDishRoutes from "./routes/menuSideDish.routes.js";
 import sideDishRoutes from "./routes/sideDish.routes.js";
 import "./models/index.js";
+import { backfillTableCodes } from "./utils/tableCode.js";
+import { backfillOrderOwners } from "./utils/orderOwner.js";
+import { migrateCompletedOrders } from "./utils/orderStatusMigration.js";
 
 
-connectDB(); // 👈 MUST BE HERE
+connectDB() // 👈 MUST BE HERE
+  .then(backfillTableCodes)
+  .then(backfillOrderOwners)
+  .then(migrateCompletedOrders)
+  .catch((error) => console.error("Table code backfill failed:", error));
 dotenv.config();
 
 const app = express();
@@ -67,6 +77,9 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/orders", reservationOrderRoutes);
 
 app.use("/api/upload", uploadRoutes);
+app.use("/api/cooks", cookRoutes);
+app.use("/api/servers", serverRoutes);
+app.use("/api/cleaners", cleanerRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

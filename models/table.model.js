@@ -30,6 +30,11 @@ const Table = sequelize.define(
         min: 1,
       },
     },
+    // Display code, e.g. SACT0001 (hotel prefix + number continuous per hotel).
+    table_code: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
   },
   {
     tableName: "tables",

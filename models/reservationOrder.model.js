@@ -14,13 +14,20 @@ const ReservationOrder = sequelize.define(
       primaryKey: true,
     },
 
+    // Optional: customers can order from the menu without a table booking.
     reservation_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: Reservation,
         key: "id",
       },
+    },
+
+    // Who placed the order (backfilled from the reservation for old rows).
+    user_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
 
     hotel_id: {
@@ -44,6 +51,29 @@ const ReservationOrder = sequelize.define(
       defaultValue: 1,
       comment:
         "1=Ordered,2=Accepted,3=Preparing,4=Ready,5=Served,6=Completed,7=Cancelled",
+    },
+
+    // Cook assigned when the order is accepted (see cook.model.js).
+    cook_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    // When the order reached the table / was handed over.
+    served_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+
+    delivered_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+
+    // Server assigned when the order is served (see server.model.js).
+    server_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
 
     payment_status: {

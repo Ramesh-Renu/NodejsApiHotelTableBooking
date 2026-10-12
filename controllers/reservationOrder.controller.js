@@ -7,21 +7,38 @@ import Menu from "../models/menu.model.js";
 import { Op } from "sequelize";
 
 import HotelTable from "../models/hotelTable.model.js";
-import { ORDER_STATUS } from "../utils/orderStatus.js";
+import Cook from "../models/cook.model.js";
+import Server from "../models/server.model.js";
+import { findAssignableStaff } from "../utils/staffController.js";
+import { ORDER_STATUS, CLOSED_ORDER_STATUSES } from "../utils/orderStatus.js";
 import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
+import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
 
+const CLOSED_RESERVATION_STATUSES = [
+  RESERVATION_STATUS.COMPLETED,
+  RESERVATION_STATUS.CANCELLED,
+];
+
+/**
+ * POST /api/orders/reservation/:reservationId  (order on a table booking)
+ * POST /api/orders                             (order without a booking)
+ */
 export const createOrder = async (req, res) => {
-  const { reservationId } = req.params;
+  // The booking may come from the URL or the body; it is optional.
+  const reservationId = req.params.reservationId ?? req.body.reservation_id ?? null;
 
-  const reservationIdNumber = Number(reservationId);
-  if (!Number.isInteger(reservationIdNumber) || reservationIdNumber <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "A valid reservationId is required in the URL path.",
-    });
+  if (reservationId !== null && reservationId !== "") {
+    const reservationIdNumber = Number(reservationId);
+    if (!Number.isInteger(reservationIdNumber) || reservationIdNumber <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "reservation_id must be a valid id.",
+      });
+    }
   }
+  const hasReservation = reservationId !== null && reservationId !== "";
 
-  const transaction = await sequelize.transaction();
+  let transaction;
 
   try {
     const { hotel_id, notes, items } = req.body;
@@ -57,24 +74,63 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    const reservation = await Reservation.findByPk(reservationId, {
-      transaction,
-    });
+    transaction = await sequelize.transaction();
 
-    if (!reservation) {
+    const hotel = await HotelTable.findByPk(hotel_id, { transaction });
+    if (!hotel) {
       await transaction.rollback();
+      return res.status(404).json({ success: false, message: "Hotel not found." });
+    }
 
-      return res.status(404).json({
-        success: false,
-        message: "Reservation not found.",
-      });
+    const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+    let reservation = null;
+
+    if (hasReservation) {
+      reservation = await Reservation.findByPk(reservationId, { transaction });
+
+      if (!reservation) {
+        await transaction.rollback();
+        return res.status(404).json({
+          success: false,
+          message: "Reservation not found.",
+        });
+      }
+
+      if (Number(reservation.hotel_id) !== Number(hotel_id)) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: "This reservation is for a different hotel.",
+        });
+      }
+
+      // Customers order only on their own, still-open booking.
+      if (!isAdmin) {
+        if (Number(reservation.user_id) !== Number(req.user?.id)) {
+          await transaction.rollback();
+          return res.status(403).json({
+            success: false,
+            message: "You can only order on your own booking.",
+          });
+        }
+        if (CLOSED_RESERVATION_STATUSES.includes(reservation.dining_status)) {
+          await transaction.rollback();
+          return res.status(400).json({
+            success: false,
+            message: "This booking is closed. Order without a table or book again.",
+          });
+        }
+      }
     }
 
     const orderNumber = "ORD-" + Date.now();
 
     const order = await ReservationOrder.create(
       {
-        reservation_id: reservationId,
+        reservation_id: reservation ? reservation.id : null,
+
+        // The booking's guest when an admin orders for a table, else the caller.
+        user_id: reservation ? reservation.user_id : req.user?.id ?? null,
 
         hotel_id,
 
@@ -96,6 +152,10 @@ export const createOrder = async (req, res) => {
 
       if (!menu.is_available) {
         throw new Error(`${menu.menu_name} is unavailable`);
+      }
+
+      if (Number(menu.hotel_id) !== Number(hotel_id)) {
+        throw new Error(`${menu.menu_name} isn't on this hotel's menu`);
       }
 
       const unitPrice = Number(menu.price);
@@ -157,13 +217,203 @@ export const createOrder = async (req, res) => {
       data: order,
     });
   } catch (error) {
-    await transaction.rollback();
+    if (transaction) await transaction.rollback();
 
     return res.status(500).json({
       success: false,
 
       message: error.message,
     });
+  }
+};
+
+/**
+ * PUT /api/orders/:id/items  { items: [{ menu_id, quantity, notes? }] }
+ * Sets the order's item list: unchanged items keep their row (and kitchen
+ * status), quantities are updated, missing items are removed, new ones are
+ * added at the current menu price. Totals are recalculated (5% tax, as in
+ * createOrder).
+ */
+export const updateOrderItems = async (req, res) => {
+  const { items } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "An order needs at least one item. Cancel the order instead.",
+    });
+  }
+
+  const wanted = new Map();
+  for (const item of items) {
+    const menuId = Number(item?.menu_id);
+    const quantity = Number(item?.quantity);
+    if (!Number.isInteger(menuId) || menuId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Each item needs a valid menu_id.",
+      });
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Each item needs a quantity of at least 1.",
+      });
+    }
+    const existing = wanted.get(menuId);
+    wanted.set(menuId, {
+      quantity: (existing?.quantity || 0) + quantity,
+      notes: item.notes ?? existing?.notes ?? null,
+      // undefined = keep / default, null = no cook
+      cook_id:
+        item.cook_id === undefined
+          ? existing?.cook_id
+          : item.cook_id === "" || item.cook_id === null
+            ? null
+            : Number(item.cook_id),
+    });
+  }
+
+  let transaction;
+  try {
+    transaction = await sequelize.transaction();
+
+    const order = await ReservationOrder.findByPk(req.params.id, {
+      include: [{ model: ReservationOrderItem, as: "items" }],
+      transaction,
+    });
+
+    if (!order) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: "Order not found." });
+    }
+
+    if (CLOSED_ORDER_STATUSES.includes(order.order_status)) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "Served, delivered or cancelled orders can't be changed.",
+      });
+    }
+
+    const current = new Map(
+      (order.items || []).map((item) => [Number(item.menu_id), item]),
+    );
+
+    // Check every cook named on the items once.
+    const cookIds = [...new Set(
+      [...wanted.values()].map((item) => item.cook_id).filter((id) => id != null),
+    )];
+    for (const cookId of cookIds) {
+      const { error } = await findAssignableStaff(Cook, cookId, order.hotel_id, {
+        nameField: "cook_name",
+        label: "cook",
+      });
+      if (error) {
+        await transaction.rollback();
+        return res.status(400).json({ success: false, message: error });
+      }
+    }
+
+    // Remove items that are no longer on the order.
+    for (const [menuId, item] of current) {
+      if (!wanted.has(menuId)) await item.destroy({ transaction });
+    }
+
+    let subtotal = 0;
+    for (const [menuId, { quantity, notes, cook_id: cookId }] of wanted) {
+      const existing = current.get(menuId);
+
+      if (existing) {
+        const unitPrice = Number(existing.unit_price);
+        const total = unitPrice * quantity;
+        subtotal += total;
+        const nextCook = cookId === undefined ? existing.cook_id : cookId;
+        if (
+          existing.quantity !== quantity ||
+          (notes ?? null) !== existing.notes ||
+          (nextCook ?? null) !== (existing.cook_id ?? null)
+        ) {
+          await existing.update(
+            {
+              quantity,
+              total_price: total,
+              notes: notes ?? existing.notes,
+              cook_id: nextCook ?? null,
+            },
+            { transaction },
+          );
+        }
+        continue;
+      }
+
+      const menu = await Menu.findByPk(menuId, { transaction });
+      if (!menu || Number(menu.hotel_id) !== Number(order.hotel_id)) {
+        throw new Error(`Menu item ${menuId} isn't on this hotel's menu.`);
+      }
+      if (!menu.is_available) {
+        throw new Error(`${menu.menu_name} is unavailable.`);
+      }
+
+      const unitPrice = Number(menu.price);
+      const total = unitPrice * quantity;
+      subtotal += total;
+      await ReservationOrderItem.create(
+        {
+          reservation_order_id: order.id,
+          menu_id: menu.id,
+          menu_name: menu.menu_name,
+          quantity,
+          unit_price: unitPrice,
+          total_price: total,
+          notes,
+          // New items default to the order's cook.
+          cook_id: cookId === undefined ? order.cook_id ?? null : cookId,
+        },
+        { transaction },
+      );
+    }
+
+    const tax = subtotal * 0.05;
+    const discount = Number(order.discount) || 0;
+    const serviceCharge = Number(order.service_charge) || 0;
+    await order.update(
+      {
+        subtotal,
+        tax,
+        total_amount: subtotal + tax + serviceCharge - discount,
+      },
+      { transaction },
+    );
+
+    await transaction.commit();
+
+    const updated = await ReservationOrder.findByPk(order.id, {
+      include: [
+        {
+          model: ReservationOrderItem,
+          as: "items",
+          attributes: ["id", "menu_id", "menu_name", "quantity", "unit_price", "total_price", "item_status", "cook_id"],
+          include: [
+            {
+              model: Cook,
+              as: "cook",
+              attributes: ["id", "cook_name", "speciality", "photo_url"],
+              required: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    return res.json({
+      success: true,
+      message: "Order items updated.",
+      data: updated,
+    });
+  } catch (error) {
+    if (transaction && !transaction.finished) await transaction.rollback();
+    return res.status(400).json({ success: false, message: error.message });
   }
 };
 
@@ -219,8 +469,10 @@ export const getOrders = async (req, res) => {
     };
 
     if (!isAdmin) {
-      reservationInclude.where = { user_id: req.user.id };
+      // Customers see their own orders, with or without a booking.
+      where.user_id = req.user.id;
     }
+    reservationInclude.required = false;
 
     const { rows, count } = await ReservationOrder.findAndCountAll({
       where,
@@ -235,15 +487,39 @@ export const getOrders = async (req, res) => {
         },
 
         {
+          model: Cook,
+          as: "cook",
+          attributes: ["id", "cook_name", "speciality", "photo_url"],
+          required: false,
+        },
+
+        {
+          model: Server,
+          as: "server",
+          attributes: ["id", "server_name", "section", "photo_url"],
+          required: false,
+        },
+
+        {
           model: ReservationOrderItem,
           as: "items",
           attributes: [
             "id",
+            "menu_id",
             "menu_name",
             "quantity",
             "unit_price",
             "total_price",
             "item_status",
+            "cook_id",
+          ],
+          include: [
+            {
+              model: Cook,
+              as: "cook",
+              attributes: ["id", "cook_name", "speciality", "photo_url"],
+              required: false,
+            },
           ],
         },
       ],
@@ -433,13 +709,95 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
+    // Table orders are served; orders without a booking are delivered.
+    const nextStatus = Number(req.body.order_status);
+    if (nextStatus === ORDER_STATUS.COMPLETED) {
+      return res.status(400).json({
+        success: false,
+        message: "Completed is no longer a stage. Served or Delivered completes an order.",
+      });
+    }
+    // A finished order keeps its status (its server can still be changed).
+    if (
+      CLOSED_ORDER_STATUSES.includes(order.order_status) &&
+      nextStatus !== order.order_status
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "This order is already finished and can't move to another stage.",
+      });
+    }
+    if (nextStatus === ORDER_STATUS.SERVED && !order.reservation_id) {
+      return res.status(400).json({
+        success: false,
+        message: "This order has no table booking. Move it to Delivered instead of Served.",
+      });
+    }
+    if (nextStatus === ORDER_STATUS.DELIVERED && order.reservation_id) {
+      return res.status(400).json({
+        success: false,
+        message: "This is a table order. Move it to Served instead of Delivered.",
+      });
+    }
+
+    const previousCookId = order.cook_id;
+
+    // Optional staff assignment: cook when accepted, server when served.
+    const staffFields = [
+      { field: "cook_id", Model: Cook, nameField: "cook_name", label: "cook" },
+      { field: "server_id", Model: Server, nameField: "server_name", label: "server" },
+    ];
+    for (const { field, Model, nameField, label } of staffFields) {
+      if (req.body[field] === undefined) continue;
+      if (req.body[field] === null || req.body[field] === "") {
+        order[field] = null;
+        continue;
+      }
+      const staff = await Model.findByPk(req.body[field]);
+      if (!staff || !staff.is_active) {
+        return res.status(400).json({
+          success: false,
+          message: `Select an active ${label}.`,
+        });
+      }
+      if (staff.hotel_id && staff.hotel_id !== order.hotel_id) {
+        return res.status(400).json({
+          success: false,
+          message: `${staff[nameField]} does not work at this hotel.`,
+        });
+      }
+      order[field] = staff.id;
+    }
+
     order.order_status = req.body.order_status;
 
-    if (req.body.order_status == ORDER_STATUS.COMPLETED) {
-      order.completed_at = new Date();
+    // Record when each end stage was reached (first time only).
+    const now = new Date();
+    // Served / Delivered finish the order, so they also set completed_at.
+    if (nextStatus === ORDER_STATUS.SERVED && !order.served_at) order.served_at = now;
+    if (nextStatus === ORDER_STATUS.DELIVERED && !order.delivered_at) order.delivered_at = now;
+    if (
+      [ORDER_STATUS.SERVED, ORDER_STATUS.DELIVERED].includes(nextStatus) &&
+      !order.completed_at
+    ) {
+      order.completed_at = now;
     }
 
     await order.save();
+
+    // The order's cook becomes the cook of every item that had none (or had
+    // the previous order cook); items given their own cook keep it.
+    if (req.body.cook_id !== undefined && order.cook_id !== previousCookId) {
+      await ReservationOrderItem.update(
+        { cook_id: order.cook_id },
+        {
+          where: {
+            reservation_order_id: order.id,
+            [Op.or]: [{ cook_id: null }, { cook_id: previousCookId ?? null }],
+          },
+        },
+      );
+    }
 
     return res.json({
       success: true,
@@ -504,6 +862,33 @@ export const cancelOrder = async (req, res) => {
         success: false,
         message: "Order not found",
       });
+    }
+
+    if (CLOSED_ORDER_STATUSES.includes(order.order_status)) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "This order is already completed or cancelled.",
+      });
+    }
+
+    // Customers cancel only their own order, before the kitchen accepts it.
+    const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+    if (!isAdmin) {
+      if (Number(order.user_id) !== Number(req.user?.id)) {
+        await transaction.rollback();
+        return res.status(403).json({
+          success: false,
+          message: "You can only cancel your own order.",
+        });
+      }
+      if (order.order_status !== ORDER_STATUS.ORDERED) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: "The kitchen has already accepted this order, so it can't be cancelled.",
+        });
+      }
     }
 
     order.order_status = ORDER_STATUS.CANCELLED;
