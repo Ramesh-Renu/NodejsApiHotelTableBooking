@@ -7,19 +7,22 @@ const swaggerDefinition = {
     version: "1.0.0",
     description: "API documentation for Hotel Booking System",
   },
+  // "/" = the server this page is opened from, so "Try it out" works both
+  // locally (http://localhost:5000/api-docs) and on Render
+  // (https://hotel-table-booking.onrender.com/api-docs).
   servers: [
     {
-      // url: "https://hotel-booking-api-y8gp.onrender.com",
-      url: "http://localhost:5000",
-      description: "Local server",
-    }
+      url: "/",
+      description: "This server",
+    },
   ],
 
   /* 🔐 ADD THIS PART (JWT CONFIG) */
   components: {
     securitySchemes: {
       bearerAuth: {
-        type: "https",
+        // OpenAPI's scheme type is "http" (bearer token), even over HTTPS.
+        type: "http",
         scheme: "bearer",
         bearerFormat: "JWT",
       },

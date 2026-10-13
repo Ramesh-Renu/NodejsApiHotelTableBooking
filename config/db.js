@@ -291,10 +291,13 @@ const REQUIRED_ORDER_STATUSES = [
 const ensureStatusRows = async (tableName, statuses) => {
   for (const status of statuses) {
     try {
+      // MAX() sits in a sub-select: an aggregate SELECT always returns one
+      // row, so with it in the outer query the NOT EXISTS filter did nothing
+      // and every start tried (and failed) to re-insert existing statuses.
       await sequelize.query(
         `INSERT INTO "${tableName}" ("id", "status_id", "name", "color_code", "created_at", "updated_at")
-         SELECT COALESCE(MAX("id"), 0) + 1, :status_id, :name, :color_code, NOW(), NOW()
-         FROM "${tableName}"
+         SELECT (SELECT COALESCE(MAX("id"), 0) + 1 FROM "${tableName}"),
+                :status_id, :name, :color_code, NOW(), NOW()
          WHERE NOT EXISTS (
            SELECT 1 FROM "${tableName}" WHERE "status_id" = :status_id
          )`,
