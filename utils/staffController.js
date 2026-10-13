@@ -36,6 +36,54 @@ export const createStaffController = ({
   const cleanText = (value) =>
     typeof value === "string" && value.trim() ? value.trim() : null;
 
+  // Optional personal details / working hours. Only fields present in the
+  // body are returned ("" clears one). { values } or { error }.
+  const readPersonalFields = (body) => {
+    const values = {};
+    const text = (field) => {
+      if (body[field] !== undefined) values[field] = cleanText(body[field]);
+    };
+    ["gender", "address", "emergency_contact"].forEach(text);
+
+    if (body.phone !== undefined) {
+      const phone = cleanText(body.phone);
+      if (phone && !/^\+?[0-9][0-9\s-]{5,18}$/.test(phone)) {
+        return { error: "Enter a valid phone number." };
+      }
+      values.phone = phone;
+    }
+    if (body.email !== undefined) {
+      const email = cleanText(body.email);
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return { error: "Enter a valid email address." };
+      }
+      values.email = email ? email.toLowerCase() : null;
+    }
+    for (const [field, label] of [
+      ["date_of_birth", "Date of birth"],
+      ["joined_on", "Joining date"],
+    ]) {
+      if (body[field] === undefined) continue;
+      const date = cleanText(body[field]);
+      if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date)))) {
+        return { error: `${label} must be a valid date.` };
+      }
+      values[field] = date;
+    }
+    for (const [field, label] of [
+      ["shift_start", "Shift start"],
+      ["shift_end", "Shift end"],
+    ]) {
+      if (body[field] === undefined) continue;
+      const time = cleanText(body[field]);
+      if (time && !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time)) {
+        return { error: `${label} must be a time like 09:30.` };
+      }
+      values[field] = time;
+    }
+    return { values };
+  };
+
   // "" / 0 / null mean "all hotels".
   const parseHotelId = async (value) => {
     if (value === undefined) return { value: undefined };
@@ -105,7 +153,13 @@ export const createStaffController = ({
         return res.status(404).json({ success: false, message: hotel.error });
       }
 
+      const personal = readPersonalFields(req.body);
+      if (personal.error) {
+        return res.status(400).json({ success: false, message: personal.error });
+      }
+
       const row = await Model.create({
+        ...personal.values,
         [nameField]: name,
         [detailField]: cleanText(req.body[detailField]),
         photo_url: cleanText(req.body.photo_url),
@@ -142,6 +196,11 @@ export const createStaffController = ({
       for (const field of [detailField, "photo_url", "photo_file_id"]) {
         if (req.body[field] !== undefined) updates[field] = cleanText(req.body[field]);
       }
+      const personal = readPersonalFields(req.body);
+      if (personal.error) {
+        return res.status(400).json({ success: false, message: personal.error });
+      }
+      Object.assign(updates, personal.values);
       if (req.body.is_active !== undefined) {
         const active = parseBoolean(req.body.is_active);
         if (active === null) {

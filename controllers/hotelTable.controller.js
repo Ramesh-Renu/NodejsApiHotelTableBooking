@@ -5,6 +5,9 @@ import Table from "../models/table.model.js";
 import Seat from "../models/seat.model.js";
 import Reservation from "../models/reservation.model.js";
 import Location from "../models/location.model.js";
+import ReservationOrder from "../models/reservationOrder.model.js";
+import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
+import { CLOSED_ORDER_STATUSES } from "../utils/orderStatus.js";
 import { Op } from "sequelize";
 import { sequelize } from "../config/db.js";
 import {
@@ -610,11 +613,46 @@ export const deleteHotelTable = async (req, res) => {
       });
     }
 
+    // Don't pull a hotel out from under guests who are booked / dining or
+    // food still in the kitchen.
+    const activeBookings = await Reservation.count({
+      where: {
+        hotel_id: data.id,
+        dining_status: {
+          [Op.in]: [
+            RESERVATION_STATUS.PENDING,
+            RESERVATION_STATUS.CONFIRMED,
+            RESERVATION_STATUS.SEATED,
+            RESERVATION_STATUS.SERVING,
+            RESERVATION_STATUS.CLEANING,
+          ],
+        },
+      },
+    });
+    const openOrders = await ReservationOrder.count({
+      where: {
+        hotel_id: data.id,
+        order_status: { [Op.notIn]: CLOSED_ORDER_STATUSES },
+      },
+    });
+    if (activeBookings || openOrders) {
+      const parts = [
+        activeBookings && `${activeBookings} active booking(s)`,
+        openOrders && `${openOrders} open order(s)`,
+      ].filter(Boolean);
+      return res.status(409).json({
+        success: false,
+        message: `${data.hotel_name} has ${parts.join(" and ")}. Complete or cancel them before deleting the hotel.`,
+      });
+    }
+
+    // Soft delete (paranoid model): the hotel is hidden everywhere, but its
+    // floors, tables, menus, bookings and orders stay for history.
     await data.destroy();
 
     res.json({
       success: true,
-      message: "Hotel table deleted successfully",
+      message: "Hotel deleted successfully",
     });
   } catch (error) {
     console.error("Delete error:", error);

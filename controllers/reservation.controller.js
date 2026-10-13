@@ -14,6 +14,8 @@ import Server from "../models/server.model.js";
 import Cleaner from "../models/cleaner.model.js";
 import { findAssignableStaff } from "../utils/staffController.js";
 import { attachTableCodes } from "../utils/reservationTables.js";
+import ReservationOrder from "../models/reservationOrder.model.js";
+import { CLOSED_ORDER_STATUSES } from "../utils/orderStatus.js";
 import {
   getHeldSeats,
   parseSlot,
@@ -546,7 +548,10 @@ export const getDashboardSummary = async (req, res) => {
         limit: 6,
         order: [["dining_date", "DESC"], ["start_time", "DESC"]],
         attributes: ["id", "dining_date", "start_time", "dining_status", "seat_status"],
-        include: [{ model: HotelTable, as: "hotel", attributes: ["id", "hotel_name"] }],
+        include: [
+          // paranoid: false — history still names a since-deleted hotel.
+          { model: HotelTable, as: "hotel", attributes: ["id", "hotel_name"], paranoid: false },
+        ],
       }),
     ]);
 
@@ -633,6 +638,8 @@ export const getReservations = async (req, res) => {
         {
           model: HotelTable,
           as: "hotel",
+          // Keep showing the name of a since-deleted (soft) hotel in history.
+          paranoid: false,
           attributes: ["id", "hotel_name"],
         },
         {
@@ -650,6 +657,13 @@ export const getReservations = async (req, res) => {
           model: Cleaner,
           as: "cleaner",
           attributes: ["id", "cleaner_name", "shift", "photo_url"],
+          required: false,
+        },
+        // Who made the booking (shown in the admin booking details).
+        {
+          model: RegisterUsersData,
+          as: "user",
+          attributes: ["id", "name", "mobilenumber", "email", "role"],
           required: false,
         },
       ],
@@ -780,6 +794,28 @@ export const updateDiningStatus = async (req, res) => {
         success: false,
         message: "This booking isn't due yet. Guests can be seated from 15 minutes before the booked time.",
       });
+    }
+
+    // A booking completes only when every food order is finished (served,
+    // delivered or cancelled): nothing still cooking or waiting at the pass.
+    if (Number(dining_status) === RESERVATION_STATUS.COMPLETED) {
+      const openOrders = await ReservationOrder.findAll({
+        where: {
+          reservation_id: reservation.id,
+          order_status: { [Op.notIn]: CLOSED_ORDER_STATUSES },
+        },
+        attributes: ["order_number"],
+        transaction,
+      });
+      if (openOrders.length) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Serve or cancel ${openOrders
+            .map((order) => order.order_number)
+            .join(", ")} before completing this booking.`,
+        });
+      }
     }
 
     const seatStatusToUpdate = RESERVATION_TO_SEAT_MAP[dining_status];

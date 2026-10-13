@@ -16,6 +16,7 @@ import SpiceLevelMaster from "./spiceLevelMaster.model.js";
 import MenuSideDish from "./menuSideDish.model.js";
 import MenuSideDishMapping from "./menuSideDishMapping.model.js";
 import SideDish from "./sideDish.model.js";
+import RegisterUsersData from "./user.model.js";
 
 /* ==========================================================
    HOTEL ↔ FLOORS
@@ -166,6 +167,12 @@ Reservation.belongsTo(Cleaner, {
     as: "cleaner",
     constraints: false,
 });
+// Booking's customer (no DB constraint: user_id is checked in code).
+Reservation.belongsTo(RegisterUsersData, {
+    foreignKey: "user_id",
+    as: "user",
+    constraints: false,
+});
 Cleaner.belongsTo(HotelTable, {
     foreignKey: "hotel_id",
     as: "hotel",
@@ -220,12 +227,13 @@ Menu.hasMany(MenuSideDishMapping, {
   as: "sideDishes",
 });
 
-// SideDish → Mapping
-MenuSideDish.hasMany(MenuSideDishMapping, {
+// SideDish (per menu category) → Mapping. The global MenuSideDish list is
+// no longer linked to menus.
+SideDish.hasMany(MenuSideDishMapping, {
   foreignKey: "side_dish_id",
   as: "menuMappings",
 });
-MenuSideDishMapping.belongsTo(MenuSideDish, {
+MenuSideDishMapping.belongsTo(SideDish, {
   foreignKey: "side_dish_id",
   as: "sideDish",
 });

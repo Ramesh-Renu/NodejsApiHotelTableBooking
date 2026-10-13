@@ -2,6 +2,8 @@ import { Op } from "sequelize";
 import SideDish from "../models/sideDish.model.js";
 import HotelTable from "../models/hotelTable.model.js";
 import MenuCategory from "../models/menuCategory.model.js";
+import MenuSideDishMapping from "../models/menuSideDishMapping.model.js";
+import sequelize from "../config/db.js";
 
 const parseBoolean = (value) => {
   if (value === undefined) return undefined;
@@ -10,31 +12,40 @@ const parseBoolean = (value) => {
   return null;
 };
 
+const sideDishIncludes = [
+  {
+    model: HotelTable,
+    as: "hotel",
+    attributes: ["id", "hotel_name"],
+  },
+  {
+    model: MenuCategory,
+    as: "category",
+    attributes: ["id", "category_name"],
+  },
+];
+
+// A side dish belongs to a category; its hotel is always the category's hotel.
+const findDuplicate = (categoryId, name, excludeId) =>
+  SideDish.findOne({
+    where: {
+      category_id: categoryId,
+      side_dish_name: { [Op.iLike]: name },
+      ...(excludeId ? { id: { [Op.ne]: excludeId } } : {}),
+    },
+  });
+
 export const createSideDish = async (req, res) => {
   try {
-    const {
-      hotel_id,
-      category_id,
-      side_dish_name,
-      description,
-      price,
-      display_order,
-      is_active,
-    } = req.body;
+    const { category_id, side_dish_name, description, price, display_order, is_active } =
+      req.body;
 
-    if (!hotel_id || !category_id || !side_dish_name) {
+    const name = typeof side_dish_name === "string" ? side_dish_name.trim() : "";
+
+    if (!category_id || !name) {
       return res.status(400).json({
         success: false,
-        message: "hotel_id, category_id and side_dish_name are required.",
-      });
-    }
-
-    const hotel = await HotelTable.findByPk(hotel_id);
-
-    if (!hotel) {
-      return res.status(404).json({
-        success: false,
-        message: "Hotel not found.",
+        message: "category_id and side_dish_name are required.",
       });
     }
 
@@ -47,30 +58,20 @@ export const createSideDish = async (req, res) => {
       });
     }
 
-    const existing = await SideDish.findOne({
-      where: {
-        hotel_id,
-        category_id,
-        side_dish_name: {
-          [Op.iLike]: side_dish_name.trim(),
-        },
-      },
-    });
-
-    if (existing) {
+    if (await findDuplicate(category.id, name)) {
       return res.status(409).json({
         success: false,
-        message: "Side dish already exists.",
+        message: "Side dish already exists in this category.",
       });
     }
 
     const sideDish = await SideDish.create({
-      hotel_id,
-      category_id,
-      side_dish_name: side_dish_name.trim(),
+      hotel_id: category.hotel_id,
+      category_id: category.id,
+      side_dish_name: name,
       description,
-      price,
-      display_order,
+      price: Number(price) || 0,
+      display_order: Number(display_order) || 0,
       is_active,
     });
 
@@ -80,7 +81,7 @@ export const createSideDish = async (req, res) => {
       data: sideDish,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Create side dish error:", error);
 
     res.status(500).json({
       success: false,
@@ -88,19 +89,20 @@ export const createSideDish = async (req, res) => {
     });
   }
 };
+
 export const getAllSideDishes = async (req, res) => {
   try {
-    let {
-      page = 1,
-      limit = 10,
-      search,
-      hotel_id,
-      category_id,
-      is_active,
-    } = req.query;
+    let { page = 1, limit = 10, search, hotel_id, category_id, is_active } = req.query;
 
     page = Number(page);
     limit = Number(limit);
+
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "page and limit must be positive integers.",
+      });
+    }
 
     const where = {};
 
@@ -109,6 +111,12 @@ export const getAllSideDishes = async (req, res) => {
 
     const active = parseBoolean(is_active);
 
+    if (active === null) {
+      return res.status(400).json({
+        success: false,
+        message: "is_active must be true or false.",
+      });
+    }
     if (active !== undefined) where.is_active = active;
 
     if (search) {
@@ -119,18 +127,7 @@ export const getAllSideDishes = async (req, res) => {
 
     const { rows, count } = await SideDish.findAndCountAll({
       where,
-      include: [
-        {
-          model: HotelTable,
-          as: "hotel",
-          attributes: ["id", "hotel_name"],
-        },
-        {
-          model: MenuCategory,
-          as: "category",
-          attributes: ["id", "category_name"],
-        },
-      ],
+      include: sideDishIncludes,
       limit,
       offset: (page - 1) * limit,
       order: [
@@ -147,7 +144,7 @@ export const getAllSideDishes = async (req, res) => {
       data: rows,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Fetch side dishes error:", error);
 
     res.status(500).json({
       success: false,
@@ -157,56 +154,136 @@ export const getAllSideDishes = async (req, res) => {
 };
 
 export const getSideDishById = async (req, res) => {
-  const sideDish = await SideDish.findByPk(req.params.id, {
-    include: ["hotel", "category"],
-  });
+  try {
+    const sideDish = await SideDish.findByPk(req.params.id, {
+      include: sideDishIncludes,
+    });
 
-  if (!sideDish) {
-    return res.status(404).json({
+    if (!sideDish) {
+      return res.status(404).json({
+        success: false,
+        message: "Side dish not found.",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: sideDish,
+    });
+  } catch (error) {
+    console.error("Fetch side dish error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Side dish not found.",
+      message: "Failed to fetch side dish.",
     });
   }
-
-  res.json({
-    success: true,
-    data: sideDish,
-  });
 };
 
 export const updateSideDish = async (req, res) => {
-  const sideDish = await SideDish.findByPk(req.params.id);
+  try {
+    const sideDish = await SideDish.findByPk(req.params.id);
 
-  if (!sideDish) {
-    return res.status(404).json({
+    if (!sideDish) {
+      return res.status(404).json({
+        success: false,
+        message: "Side dish not found.",
+      });
+    }
+
+    // category_id is fixed: menus of the category link to this side dish.
+    const allowedFields = [
+      "side_dish_name",
+      "description",
+      "price",
+      "display_order",
+      "is_active",
+    ];
+    const updates = Object.fromEntries(
+      allowedFields
+        .filter((field) => req.body[field] !== undefined)
+        .map((field) => [field, req.body[field]]),
+    );
+
+    if (updates.side_dish_name !== undefined) {
+      updates.side_dish_name =
+        typeof updates.side_dish_name === "string" ? updates.side_dish_name.trim() : "";
+
+      if (!updates.side_dish_name) {
+        return res.status(400).json({
+          success: false,
+          message: "side_dish_name cannot be empty.",
+        });
+      }
+    }
+
+    if (updates.side_dish_name !== undefined) {
+      const duplicate = await findDuplicate(
+        sideDish.category_id,
+        updates.side_dish_name,
+        sideDish.id,
+      );
+
+      if (duplicate) {
+        return res.status(409).json({
+          success: false,
+          message: "Side dish already exists in this category.",
+        });
+      }
+    }
+
+    if (updates.price !== undefined) updates.price = Number(updates.price) || 0;
+    if (updates.display_order !== undefined) {
+      updates.display_order = Number(updates.display_order) || 0;
+    }
+
+    await sideDish.update(updates);
+
+    res.json({
+      success: true,
+      message: "Side dish updated successfully.",
+      data: sideDish,
+    });
+  } catch (error) {
+    console.error("Update side dish error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Side dish not found.",
+      message: "Failed to update side dish.",
     });
   }
-
-  await sideDish.update(req.body);
-
-  res.json({
-    success: true,
-    message: "Side dish updated successfully.",
-    data: sideDish,
-  });
 };
 
 export const deleteSideDish = async (req, res) => {
-  const sideDish = await SideDish.findByPk(req.params.id);
+  try {
+    const sideDish = await SideDish.findByPk(req.params.id);
 
-  if (!sideDish) {
-    return res.status(404).json({
+    if (!sideDish) {
+      return res.status(404).json({
+        success: false,
+        message: "Side dish not found.",
+      });
+    }
+
+    // Also unlink it from the menus that offer it.
+    await sequelize.transaction(async (transaction) => {
+      await MenuSideDishMapping.destroy({
+        where: { side_dish_id: sideDish.id },
+        transaction,
+      });
+      await sideDish.destroy({ transaction });
+    });
+
+    res.json({
+      success: true,
+      message: "Side dish deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Delete side dish error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Side dish not found.",
+      message: "Failed to delete side dish.",
     });
   }
-
-  await sideDish.destroy();
-
-  res.json({
-    success: true,
-    message: "Side dish deleted successfully.",
-  });
 };

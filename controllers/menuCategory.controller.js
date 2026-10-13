@@ -2,6 +2,8 @@ import { Op } from "sequelize";
 import MenuCategory from "../models/menuCategory.model.js";
 import HotelTable from "../models/hotelTable.model.js";
 import Menu from "../models/menu.model.js";
+import SideDish from "../models/sideDish.model.js";
+import sequelize from "../config/db.js";
 
 const parseBoolean = (value) => {
   if (value === undefined) return undefined;
@@ -244,7 +246,17 @@ export const updateMenuCategory = async (req, res) => {
       }
     }
 
-    await category.update(updates);
+    await sequelize.transaction(async (transaction) => {
+      await category.update(updates, { transaction });
+
+      // Side dishes always belong to their category's hotel.
+      if (updates.hotel_id !== undefined) {
+        await SideDish.update(
+          { hotel_id: category.hotel_id },
+          { where: { category_id: category.id }, transaction },
+        );
+      }
+    });
 
     return res.json({
       success: true,
@@ -279,7 +291,10 @@ export const deleteMenuCategory = async (req, res) => {
       });
     }
 
-    await category.destroy();
+    await sequelize.transaction(async (transaction) => {
+      await SideDish.destroy({ where: { category_id: category.id }, transaction });
+      await category.destroy({ transaction });
+    });
 
     return res.json({
       success: true,

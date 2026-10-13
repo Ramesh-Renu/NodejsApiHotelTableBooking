@@ -42,7 +42,9 @@ const seqOf = (code, prefix) => {
 export const isPrefixTaken = async (prefix, exceptHotelId, transaction) => {
   const where = { table_code_prefix: prefix };
   if (exceptHotelId) where.id = { [Op.ne]: exceptHotelId };
-  return Boolean(await HotelTable.findOne({ where, transaction }));
+  // paranoid: false — a deleted hotel's tables keep their codes, so its
+  // prefix stays reserved.
+  return Boolean(await HotelTable.findOne({ where, transaction, paranoid: false }));
 };
 
 /** Returns `base`, or base2, base3… until one is free. */

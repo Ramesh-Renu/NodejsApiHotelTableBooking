@@ -23,7 +23,7 @@ const MenuSideDishMapping = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
       references: {
-        model: "menu_side_dishes",
+        model: "side_dishes",
         key: "id",
       },
     },

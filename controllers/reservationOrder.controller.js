@@ -14,6 +14,29 @@ import { ORDER_STATUS, CLOSED_ORDER_STATUSES } from "../utils/orderStatus.js";
 import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
 import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
 
+const PAYMENT_METHODS = ["cash", "card", "upi"];
+
+// reservation_order_items.item_status (see the model comment).
+const ITEM_STATUS = Object.freeze({
+  ORDERED: 1,
+  PREPARING: 2,
+  READY: 3,
+  SERVED: 4,
+  CANCELLED: 5,
+});
+const EDITABLE_ITEM_STATUSES = [
+  ITEM_STATUS.ORDERED,
+  ITEM_STATUS.PREPARING,
+  ITEM_STATUS.READY,
+];
+
+// Order stages in which the kitchen is still cooking.
+const KITCHEN_ORDER_STATUSES = [
+  ORDER_STATUS.ORDERED,
+  ORDER_STATUS.ACCEPTED,
+  ORDER_STATUS.PREPARING,
+];
+
 const CLOSED_RESERVATION_STATUSES = [
   RESERVATION_STATUS.COMPLETED,
   RESERVATION_STATUS.CANCELLED,
@@ -393,7 +416,7 @@ export const updateOrderItems = async (req, res) => {
         {
           model: ReservationOrderItem,
           as: "items",
-          attributes: ["id", "menu_id", "menu_name", "quantity", "unit_price", "total_price", "item_status", "cook_id"],
+          attributes: ["id", "menu_id", "menu_name", "quantity", "unit_price", "total_price", "item_status", "ready_at", "cook_id"],
           include: [
             {
               model: Cook,
@@ -465,7 +488,16 @@ export const getOrders = async (req, res) => {
     const reservationInclude = {
       model: Reservation,
       as: "reservation",
-      attributes: ["id", "user_id", "dining_status"],
+      attributes: ["id", "user_id", "dining_status", "server_id"],
+      // The table's server: reused when its orders are served.
+      include: [
+        {
+          model: Server,
+          as: "server",
+          attributes: ["id", "server_name", "section", "photo_url", "is_active"],
+          required: false,
+        },
+      ],
     };
 
     if (!isAdmin) {
@@ -483,6 +515,8 @@ export const getOrders = async (req, res) => {
         {
           model: HotelTable,
           as: "hotel",
+          // Keep showing the name of a since-deleted (soft) hotel in history.
+          paranoid: false,
           attributes: ["id", "hotel_name"],
         },
 
@@ -511,6 +545,7 @@ export const getOrders = async (req, res) => {
             "unit_price",
             "total_price",
             "item_status",
+            "ready_at",
             "cook_id",
           ],
           include: [
@@ -558,6 +593,7 @@ export const getOrderById = async (req, res) => {
         {
           model: HotelTable,
           as: "hotel",
+          paranoid: false, // history still names a since-deleted hotel
         },
 
         {
@@ -727,6 +763,16 @@ export const updateOrderStatus = async (req, res) => {
         message: "This order is already finished and can't move to another stage.",
       });
     }
+    // Once cooking has started it is finished (Ready) or dropped (cancel).
+    if (
+      order.order_status === ORDER_STATUS.PREPARING &&
+      ![ORDER_STATUS.PREPARING, ORDER_STATUS.READY].includes(nextStatus)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "An order being prepared can only move to Ready or be cancelled.",
+      });
+    }
     if (nextStatus === ORDER_STATUS.SERVED && !order.reservation_id) {
       return res.status(400).json({
         success: false,
@@ -738,6 +784,20 @@ export const updateOrderStatus = async (req, res) => {
         success: false,
         message: "This is a table order. Move it to Served instead of Delivered.",
       });
+    }
+
+    // Served without naming a server: the table's own server (set on the
+    // Reservations page) serves it.
+    if (
+      nextStatus === ORDER_STATUS.SERVED &&
+      req.body.server_id === undefined &&
+      !order.server_id &&
+      order.reservation_id
+    ) {
+      const booking = await Reservation.findByPk(order.reservation_id, {
+        attributes: ["server_id"],
+      });
+      if (booking?.server_id) order.server_id = booking.server_id;
     }
 
     const previousCookId = order.cook_id;
@@ -774,6 +834,8 @@ export const updateOrderStatus = async (req, res) => {
     // Record when each end stage was reached (first time only).
     const now = new Date();
     // Served / Delivered finish the order, so they also set completed_at.
+    // Preparing timer starts the first time the kitchen starts cooking.
+    if (nextStatus === ORDER_STATUS.PREPARING && !order.preparing_at) order.preparing_at = now;
     if (nextStatus === ORDER_STATUS.SERVED && !order.served_at) order.served_at = now;
     if (nextStatus === ORDER_STATUS.DELIVERED && !order.delivered_at) order.delivered_at = now;
     if (
@@ -784,6 +846,19 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     await order.save();
+
+    // A Ready order means the kitchen is done: every dish counts as prepared.
+    if (nextStatus === ORDER_STATUS.READY) {
+      await ReservationOrderItem.update(
+        { item_status: ITEM_STATUS.READY, ready_at: new Date() },
+        {
+          where: {
+            reservation_order_id: order.id,
+            item_status: { [Op.notIn]: [ITEM_STATUS.READY, ITEM_STATUS.CANCELLED] },
+          },
+        },
+      );
+    }
 
     // The order's cook becomes the cook of every item that had none (or had
     // the previous order cook); items given their own cook keep it.
@@ -830,7 +905,23 @@ export const updatePaymentStatus = async (req, res) => {
       });
     }
 
-    order.payment_status = req.body.payment_status;
+    const paymentStatus = Number(req.body.payment_status);
+    const method =
+      typeof req.body.payment_method === "string"
+        ? req.body.payment_method.trim().toLowerCase()
+        : null;
+
+    if (paymentStatus === PAYMENT_STATUS.PAID && method && !PAYMENT_METHODS.includes(method)) {
+      return res.status(400).json({
+        success: false,
+        message: `payment_method must be one of: ${PAYMENT_METHODS.join(", ")}.`,
+      });
+    }
+
+    order.payment_status = paymentStatus;
+    // A method only makes sense once paid; keep the old one when not sent.
+    if (paymentStatus === PAYMENT_STATUS.PENDING) order.payment_method = null;
+    else if (method) order.payment_method = method;
 
     await order.save();
 
@@ -838,6 +929,113 @@ export const updatePaymentStatus = async (req, res) => {
       success: true,
       message: "Payment status updated successfully",
       data: order,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * PATCH /api/orders/:id/items/:itemId/status   { item_status }
+ * Kitchen progress of one dish, e.g. ticking it as prepared (3 = Ready).
+ */
+export const updateOrderItemStatus = async (req, res) => {
+  try {
+    const itemStatus = Number(req.body.item_status);
+    if (!EDITABLE_ITEM_STATUSES.includes(itemStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `item_status must be one of: ${EDITABLE_ITEM_STATUSES.join(", ")}.`,
+      });
+    }
+
+    const order = await ReservationOrder.findByPk(req.params.id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    if (CLOSED_ORDER_STATUSES.includes(order.order_status)) {
+      return res.status(400).json({
+        success: false,
+        message: "This order is already completed or cancelled.",
+      });
+    }
+
+    // Dishes are ticked only while the kitchen is cooking (or fixing a Ready order).
+    if (![ORDER_STATUS.PREPARING, ORDER_STATUS.READY].includes(order.order_status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Move the order to Preparing before ticking dishes.",
+      });
+    }
+
+    const item = await ReservationOrderItem.findOne({
+      where: { id: req.params.itemId, reservation_order_id: order.id },
+    });
+    if (!item) {
+      return res.status(404).json({ success: false, message: "Order item not found" });
+    }
+    if (item.item_status === ITEM_STATUS.CANCELLED) {
+      return res.status(400).json({
+        success: false,
+        message: "This item is cancelled.",
+      });
+    }
+
+    await sequelize.transaction(async (transaction) => {
+      // ready_at freezes this dish's cooking time; un-ticking clears it.
+      await item.update(
+        {
+          item_status: itemStatus,
+          ready_at: itemStatus === ITEM_STATUS.READY ? new Date() : null,
+        },
+        { transaction },
+      );
+
+      // Every dish prepared → the order is Ready; a dish un-ticked on a
+      // Ready order → back to Preparing.
+      const dishes = await ReservationOrderItem.findAll({
+        where: {
+          reservation_order_id: order.id,
+          item_status: { [Op.ne]: ITEM_STATUS.CANCELLED },
+        },
+        attributes: ["item_status"],
+        transaction,
+      });
+      const allReady =
+        dishes.length > 0 &&
+        dishes.every((dish) => dish.item_status === ITEM_STATUS.READY);
+
+      let nextStatus = order.order_status;
+      if (allReady && KITCHEN_ORDER_STATUSES.includes(order.order_status)) {
+        nextStatus = ORDER_STATUS.READY;
+      } else if (!allReady && order.order_status === ORDER_STATUS.READY) {
+        nextStatus = ORDER_STATUS.PREPARING;
+      }
+      if (nextStatus !== order.order_status) {
+        await order.update(
+          {
+            order_status: nextStatus,
+            ...(nextStatus === ORDER_STATUS.PREPARING && !order.preparing_at
+              ? { preparing_at: new Date() }
+              : {}),
+          },
+          { transaction },
+        );
+      }
+    });
+
+    return res.json({
+      success: true,
+      message:
+        itemStatus === ITEM_STATUS.READY
+          ? `${item.menu_name} is prepared`
+          : `${item.menu_name} marked as not prepared`,
+      data: item,
+      order_status: order.order_status,
+      preparing_at: order.preparing_at,
     });
   } catch (error) {
     return res.status(500).json({

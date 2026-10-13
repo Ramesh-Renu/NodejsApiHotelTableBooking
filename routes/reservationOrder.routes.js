@@ -11,6 +11,7 @@ import {
   updateOrderStatus,
   updateOrderItems,
   updatePaymentStatus,
+  updateOrderItemStatus,
   cancelOrder,
 } from "../controllers/reservationOrder.controller.js";
 
@@ -100,6 +101,12 @@ router.get("/:id", authenticate, getOrderById);
 router.put("/:id", authenticate, updateOrder);
 router.patch("/:id/status", authenticate, updateOrderStatus);
 router.put("/:id/items", authenticate, authorizeRoles("Admin"), updateOrderItems);
+router.patch(
+  "/:id/items/:itemId/status",
+  authenticate,
+  authorizeRoles("Admin"),
+  updateOrderItemStatus,
+);
 router.patch("/:id/payment", authenticate, updatePaymentStatus);
 router.patch("/:id/cancel", authenticate, cancelOrder);
 

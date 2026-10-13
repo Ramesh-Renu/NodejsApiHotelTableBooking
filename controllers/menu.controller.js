@@ -8,7 +8,25 @@ import SpiceLevelMaster from "../models/spiceLevelMaster.model.js";
 import { uploadImage } from "../utils/uploadImage.js";
 import MenuSideDishMapping from "../models/menuSideDishMapping.model.js";
 import sequelize from "../config/db.js";
-import MenuSideDish from "../models/menuSideDish.model.js";
+import SideDish from "../models/sideDish.model.js";
+
+// A menu can only offer side dishes of its own category. Returns the
+// de-duplicated ids, or null when any id is unknown or from another category.
+const validCategorySideDishIds = async (categoryId, sideDishes) => {
+  const ids = [...new Set((Array.isArray(sideDishes) ? sideDishes : []).map(Number))];
+  if (!ids.length) return [];
+  if (ids.some((id) => !Number.isInteger(id))) return null;
+
+  const count = await SideDish.count({
+    where: { id: ids, category_id: categoryId },
+  });
+  return count === ids.length ? ids : null;
+};
+
+const invalidSideDishes = {
+  success: false,
+  message: "Side dishes must belong to the selected menu category.",
+};
 
 // Menu codes are optional and unique within a hotel (case-insensitive).
 const normalizeMenuCode = (code) =>
@@ -96,6 +114,10 @@ export const createMenu = async (req, res) => {
         message: "Menu category not found.",
       });
     }
+
+    const sideDishIds = await validCategorySideDishIds(category.id, side_dishes);
+    if (!sideDishIds) return res.status(400).json(invalidSideDishes);
+
     const formattedMenuName = menu_name.trim();
 
     const exists = await Menu.findOne({
@@ -172,8 +194,8 @@ export const createMenu = async (req, res) => {
       },
       { transaction },
     );
-    if (side_dishes.length) {
-      const mappings = side_dishes.map((sideDishId) => ({
+    if (sideDishIds.length) {
+      const mappings = sideDishIds.map((sideDishId) => ({
         menu_id: menu.id,
         side_dish_id: sideDishId,
       }));
@@ -290,7 +312,7 @@ export const getMenus = async (req, res) => {
           required: false,
           include: [
             {
-              model: MenuSideDish,
+              model: SideDish,
               as: "sideDish",
             },
           ],
@@ -382,7 +404,7 @@ export const getMenuById = async (req, res) => {
           required: false,
           include: [
             {
-              model: MenuSideDish,
+              model: SideDish,
               as: "sideDish",
               attributes: [
                 "id",
@@ -390,8 +412,8 @@ export const getMenuById = async (req, res) => {
                 "description",
                 "is_active",
                 "display_order",
-                "created_at",
-                "updated_at",
+                "category_id",
+                "price",
               ],
             },
           ],
@@ -440,6 +462,12 @@ export const updateMenu = async (req, res) => {
 
     const { side_dishes = [], ...updates } = req.body;
 
+    const sideDishIds = await validCategorySideDishIds(
+      updates.category_id ?? menu.category_id,
+      side_dishes,
+    );
+    if (!sideDishIds) return res.status(400).json(invalidSideDishes);
+
     if (updates.menu_code !== undefined) {
       updates.menu_code = normalizeMenuCode(updates.menu_code);
     }
@@ -480,9 +508,9 @@ export const updateMenu = async (req, res) => {
         menu_id: menu.id,
       },
     });
-    if (side_dishes.length) {
+    if (sideDishIds.length) {
       await MenuSideDishMapping.bulkCreate(
-        side_dishes.map((id) => ({
+        sideDishIds.map((id) => ({
           menu_id: menu.id,
 
           side_dish_id: id,

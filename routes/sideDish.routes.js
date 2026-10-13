@@ -23,8 +23,8 @@ const router = express.Router();
  *   schemas:
  *     SideDish:
  *       type: object
+ *       description: hotel_id is taken from the category and ignored on input.
  *       required:
- *         - hotel_id
  *         - category_id
  *         - side_dish_name
  *       properties:

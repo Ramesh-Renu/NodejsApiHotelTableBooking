@@ -57,6 +57,10 @@ const HotelTable = sequelize.define(
   {
     tableName: "hotel_tables",
     timestamps: true,
+    // Soft delete: destroy() only sets deletedAt, so a hotel's floors,
+    // tables, menus, bookings and orders stay intact. Normal queries skip
+    // deleted hotels automatically.
+    paranoid: true,
   }
 );
 

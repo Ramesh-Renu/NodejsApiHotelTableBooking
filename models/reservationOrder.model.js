@@ -59,6 +59,13 @@ const ReservationOrder = sequelize.define(
       allowNull: true,
     },
 
+    // When the kitchen started cooking (first move to Preparing); drives the
+    // Preparing timer on the Orders board.
+    preparing_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+
     // When the order reached the table / was handed over.
     served_at: {
       type: DataTypes.DATE,
@@ -82,6 +89,12 @@ const ReservationOrder = sequelize.define(
       defaultValue: 0,
       comment:
         "0=Pending,1=Paid,2=Refunded",
+    },
+
+    // How a paid order was settled: cash, card or upi (null while pending).
+    payment_method: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
     },
 
     subtotal: {

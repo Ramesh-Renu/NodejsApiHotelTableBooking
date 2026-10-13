@@ -1,5 +1,6 @@
 import { DataTypes } from "sequelize";
 import { sequelize } from "../config/db.js";
+import { STAFF_PERSONAL_FIELDS } from "./staffPersonalFields.js";
 
 // Kitchen staff that can be assigned to an order when it is accepted.
 const Cook = sequelize.define(
@@ -38,6 +39,9 @@ const Cook = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+
+    // Optional personal details + working hours (see staffPersonalFields.js).
+    ...STAFF_PERSONAL_FIELDS,
 
     is_active: {
       type: DataTypes.BOOLEAN,

@@ -379,6 +379,92 @@ const allowOrdersWithoutReservation = async () => {
   }
 };
 
+// menu_side_dish_mapping.side_dish_id used to point at the global
+// menu_side_dishes list; it now points at side_dishes (one list per menu
+// category). Copy each linked global side dish into its menu's category and
+// re-point the link, before sync({ alter: true }) adds the new foreign key.
+const moveMenuSideDishesToCategories = async () => {
+  const [[tables]] = await sequelize.query(`
+    SELECT to_regclass('public.menu_side_dish_mapping') AS mapping,
+           to_regclass('public.menu_side_dishes') AS old_dishes
+  `);
+  if (!tables.mapping) return;
+
+  const [newFk] = await sequelize.query(`
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.menu_side_dish_mapping'::regclass
+      AND contype = 'f'
+      AND confrelid = to_regclass('public.side_dishes')
+  `);
+  if (newFk.length) return; // already migrated
+
+  await sequelize.models.SideDish.sync();
+
+  await sequelize.transaction(async (transaction) => {
+    const run = (sql) => sequelize.query(sql, { transaction });
+
+    const [oldFks] = await run(`
+      SELECT conname FROM pg_constraint
+      WHERE conrelid = 'public.menu_side_dish_mapping'::regclass
+        AND contype = 'f'
+        AND confrelid = to_regclass('public.menu_side_dishes')
+    `);
+    for (const { conname } of oldFks) {
+      await run(`ALTER TABLE "menu_side_dish_mapping" DROP CONSTRAINT "${conname}"`);
+    }
+
+    if (tables.old_dishes) {
+      await run(`
+        INSERT INTO "side_dishes"
+          (hotel_id, category_id, side_dish_name, description, price,
+           display_order, is_active, "createdAt", "updatedAt")
+        SELECT DISTINCT ON (m.category_id, lower(sd.side_dish_name))
+               m.hotel_id, m.category_id, sd.side_dish_name, sd.description, 0,
+               COALESCE(sd.display_order, 0), COALESCE(sd.is_active, true),
+               NOW(), NOW()
+        FROM "menu_side_dish_mapping" mp
+        JOIN "menus" m ON m.id = mp.menu_id
+        JOIN "menu_side_dishes" sd ON sd.id = mp.side_dish_id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM "side_dishes" s
+          WHERE s.category_id = m.category_id
+            AND lower(s.side_dish_name) = lower(sd.side_dish_name)
+        )
+        ORDER BY m.category_id, lower(sd.side_dish_name), sd.id
+      `);
+
+      await run(`
+        UPDATE "menu_side_dish_mapping" mp
+        SET side_dish_id = s.id
+        FROM "menus" m, "menu_side_dishes" sd, "side_dishes" s
+        WHERE m.id = mp.menu_id
+          AND sd.id = mp.side_dish_id
+          AND s.category_id = m.category_id
+          AND lower(s.side_dish_name) = lower(sd.side_dish_name)
+      `);
+    }
+
+    // Links that could not be moved, and duplicates created by the move.
+    await run(`
+      DELETE FROM "menu_side_dish_mapping" mp
+      WHERE NOT EXISTS (
+        SELECT 1 FROM "side_dishes" s
+        JOIN "menus" m ON m.category_id = s.category_id
+        WHERE s.id = mp.side_dish_id AND m.id = mp.menu_id
+      )
+    `);
+    await run(`
+      DELETE FROM "menu_side_dish_mapping" a
+      USING "menu_side_dish_mapping" b
+      WHERE a.menu_id = b.menu_id
+        AND a.side_dish_id = b.side_dish_id
+        AND a.id > b.id
+    `);
+  });
+
+  console.log("Menu side dishes now come from each menu's category");
+};
+
 export const connectDB = async () => {
   try {
     await sequelize.authenticate();
@@ -389,6 +475,7 @@ export const connectDB = async () => {
     await prepareSpiceLevelTable();
     await prepareMenuSpiceLevel();
     await dropGlobalMenuCodeUnique();
+    await moveMenuSideDishesToCategories();
 
     // Uncomment only if you want Sequelize to create/update tables
     await sequelize.sync({ alter: true });

@@ -88,6 +88,13 @@ const ReservationOrderItem = sequelize.define(
       comment:
         "1=Ordered,2=Preparing,3=Ready,4=Served,5=Cancelled",
     },
+
+    // When the dish was ticked as prepared (null while cooking). With the
+    // order's preparing_at it gives the dish's own cooking time.
+    ready_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
   {
     tableName: "reservation_order_items",
