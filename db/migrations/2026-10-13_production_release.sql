@@ -23,7 +23,7 @@
 --   2. Menu <-> side dish links        point at side_dishes (keeps existing links)
 --   3. Orders                          payment method, Preparing start time
 --   4. Order items                     time each dish was ticked prepared
---   5. Staff personal details          cooks, servers, cleaners (all optional)
+--   5. Staff personal details          cooks, servers, cleaners (all optional, + work place)
 --   6. Hotels                          soft delete (deletedAt)
 --   7. Menu categories                 shared by all hotels (merge same names)
 --   8. Installed app (PWA)             pwa_installs (install count for admins)
@@ -176,6 +176,10 @@ BEGIN
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "joined_on"         DATE', t);
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "shift_start"       TIME', t);
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "shift_end"         TIME', t);
+    -- Work place: location / area (from the hotel) and the hotel's floor.
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "location_id"       INTEGER', t);
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "area_id"           INTEGER', t);
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "floor_id"          INTEGER', t);
   END LOOP;
 END $$;
 
@@ -279,7 +283,8 @@ SELECT 'missing new columns' AS check, COUNT(*) FROM (VALUES
     ('hotel_tables',            'deletedAt'),
     ('cooks',    'phone'), ('cooks',    'shift_start'), ('cooks',    'shift_end'),
     ('servers',  'phone'), ('servers',  'shift_start'), ('servers',  'shift_end'),
-    ('cleaners', 'phone'), ('cleaners', 'shift_start'), ('cleaners', 'shift_end')
+    ('cleaners', 'phone'), ('cleaners', 'shift_start'), ('cleaners', 'shift_end'),
+    ('cooks', 'floor_id'), ('servers', 'floor_id'), ('cleaners', 'floor_id')
   ) AS v(table_name, column_name)
   WHERE NOT EXISTS (
     SELECT 1 FROM information_schema.columns c

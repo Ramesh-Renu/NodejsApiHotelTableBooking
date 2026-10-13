@@ -16,6 +16,11 @@ export const STAFF_PERSONAL_FIELDS = {
   // Working hours, e.g. 09:00 – 17:00 (may run past midnight).
   shift_start: { type: DataTypes.TIME, allowNull: true },
   shift_end: { type: DataTypes.TIME, allowNull: true },
+  // Where they work: location / area (taken from the hotel when one is
+  // picked) and the floor of that hotel.
+  location_id: { type: DataTypes.INTEGER, allowNull: true },
+  area_id: { type: DataTypes.INTEGER, allowNull: true },
+  floor_id: { type: DataTypes.INTEGER, allowNull: true },
 };
 
 export const STAFF_PERSONAL_FIELD_NAMES = Object.keys(STAFF_PERSONAL_FIELDS);

@@ -1,5 +1,7 @@
 import { Op } from "sequelize";
 import HotelTable from "../models/hotelTable.model.js";
+import Floor from "../models/floor.model.js";
+import Area from "../models/area.model.js";
 
 /**
  * CRUD handlers for kitchen / floor staff master data (cooks, servers).
@@ -81,7 +83,55 @@ export const createStaffController = ({
       }
       values[field] = time;
     }
+    for (const field of ["location_id", "area_id", "floor_id"]) {
+      if (body[field] === undefined) continue;
+      if (body[field] === null || body[field] === "") {
+        values[field] = null;
+        continue;
+      }
+      const id = Number(body[field]);
+      if (!Number.isInteger(id) || id < 1) {
+        return { error: `${field} must be a valid id.` };
+      }
+      values[field] = id;
+    }
     return { values };
+  };
+
+  /**
+   * Location / area / floor must fit together: with a hotel they come from
+   * that hotel (the floor must be one of its floors); without one, the area
+   * must be in the chosen location and no floor can be set.
+   * Fills `values` in place; returns an error message or null.
+   */
+  const checkPlace = async (values, hotelId) => {
+    if (hotelId) {
+      const hotel = await HotelTable.findByPk(hotelId, {
+        attributes: ["id", "location_id", "area_id"],
+      });
+      if (hotel) {
+        values.location_id = hotel.location_id ?? null;
+        values.area_id = hotel.area_id ?? null;
+      }
+    }
+    if (values.floor_id) {
+      if (!hotelId) return "Choose a hotel before picking a floor.";
+      const floor = await Floor.findByPk(values.floor_id, {
+        attributes: ["id", "hotel_table_id"],
+      });
+      if (!floor || Number(floor.hotel_table_id) !== Number(hotelId)) {
+        return "That floor is not in the selected hotel.";
+      }
+    }
+    if (!hotelId && values.area_id) {
+      const area = await Area.findByPk(values.area_id, { attributes: ["id", "location_id"] });
+      if (!area) return "Area not found.";
+      if (values.location_id && area.location_id && Number(area.location_id) !== Number(values.location_id)) {
+        return "That area is not in the selected location.";
+      }
+      if (!values.location_id) values.location_id = area.location_id ?? null;
+    }
+    return null;
   };
 
   // "" / 0 / null mean "all hotels".
@@ -92,13 +142,37 @@ export const createStaffController = ({
     return hotel ? { value: hotel.id } : { error: "Hotel not found." };
   };
 
-  /** GET ?hotel_id=&is_active=&search= (hotel_id also returns all-hotel staff) */
+  /**
+   * GET ?hotel_id=&floor_id=&is_active=&search=
+   * With hotel_id: only staff relevant to that hotel — assigned to it, or
+   * working at all hotels with no location / area limit that rules it out.
+   * With floor_id too: staff on that floor or with no floor set.
+   */
   const list = async (req, res) => {
     try {
-      const { hotel_id, is_active, search } = req.query;
+      const { hotel_id, floor_id, is_active, search } = req.query;
       const where = {};
+      const and = [];
 
-      if (hotel_id) where.hotel_id = { [Op.or]: [Number(hotel_id), null] };
+      if (hotel_id) {
+        const hotel = await HotelTable.findByPk(hotel_id, {
+          attributes: ["id", "location_id", "area_id"],
+          paranoid: false,
+        });
+        const allHotels = { hotel_id: null };
+        if (hotel?.location_id) {
+          allHotels.location_id = { [Op.or]: [null, hotel.location_id] };
+        }
+        if (hotel?.area_id) {
+          allHotels.area_id = { [Op.or]: [null, hotel.area_id] };
+        }
+        and.push({ [Op.or]: [{ hotel_id: Number(hotel_id) }, allHotels] });
+
+        if (floor_id) {
+          and.push({ floor_id: { [Op.or]: [null, Number(floor_id)] } });
+        }
+      }
+      if (and.length) where[Op.and] = and;
 
       const active = parseBoolean(is_active);
       if (active === null) {
@@ -156,6 +230,10 @@ export const createStaffController = ({
       const personal = readPersonalFields(req.body);
       if (personal.error) {
         return res.status(400).json({ success: false, message: personal.error });
+      }
+      const placeError = await checkPlace(personal.values, hotel.value ?? null);
+      if (placeError) {
+        return res.status(400).json({ success: false, message: placeError });
       }
 
       const row = await Model.create({
@@ -218,6 +296,20 @@ export const createStaffController = ({
       }
       if (hotel.value !== undefined) updates.hotel_id = hotel.value;
 
+      // A new hotel makes the old floor meaningless unless a new one is sent.
+      const hotelId = updates.hotel_id !== undefined ? updates.hotel_id : row.hotel_id;
+      if (
+        updates.hotel_id !== undefined &&
+        updates.hotel_id !== row.hotel_id &&
+        updates.floor_id === undefined
+      ) {
+        updates.floor_id = null;
+      }
+      const placeError = await checkPlace(updates, hotelId);
+      if (placeError) {
+        return res.status(400).json({ success: false, message: placeError });
+      }
+
       await row.update(updates);
       return res.json({
         success: true,
@@ -271,6 +363,19 @@ export const findAssignableStaff = async (Model, id, hotelId, { nameField, label
   }
   if (staff.hotel_id && Number(staff.hotel_id) !== Number(hotelId)) {
     return { error: `${staff[nameField]} does not work at this hotel.` };
+  }
+  // "All hotels" staff limited to a location / area only work there.
+  if (!staff.hotel_id && (staff.location_id || staff.area_id)) {
+    const hotel = await HotelTable.findByPk(hotelId, {
+      attributes: ["location_id", "area_id"],
+      paranoid: false,
+    });
+    const outside =
+      (staff.location_id && hotel?.location_id && Number(staff.location_id) !== Number(hotel.location_id)) ||
+      (staff.area_id && hotel?.area_id && Number(staff.area_id) !== Number(hotel.area_id));
+    if (outside) {
+      return { error: `${staff[nameField]} does not work in this hotel's area.` };
+    }
   }
   return { staff };
 };

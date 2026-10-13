@@ -488,7 +488,7 @@ export const getOrders = async (req, res) => {
     const reservationInclude = {
       model: Reservation,
       as: "reservation",
-      attributes: ["id", "user_id", "dining_status", "server_id"],
+      attributes: ["id", "user_id", "dining_status", "server_id", "floor_id"],
       // The table's server: reused when its orders are served.
       include: [
         {
@@ -813,18 +813,13 @@ export const updateOrderStatus = async (req, res) => {
         order[field] = null;
         continue;
       }
-      const staff = await Model.findByPk(req.body[field]);
-      if (!staff || !staff.is_active) {
-        return res.status(400).json({
-          success: false,
-          message: `Select an active ${label}.`,
-        });
-      }
-      if (staff.hotel_id && staff.hotel_id !== order.hotel_id) {
-        return res.status(400).json({
-          success: false,
-          message: `${staff[nameField]} does not work at this hotel.`,
-        });
+      // Same rules as everywhere: active, and working at this hotel / area.
+      const { staff, error } = await findAssignableStaff(Model, req.body[field], order.hotel_id, {
+        nameField,
+        label,
+      });
+      if (error) {
+        return res.status(400).json({ success: false, message: error });
       }
       order[field] = staff.id;
     }
