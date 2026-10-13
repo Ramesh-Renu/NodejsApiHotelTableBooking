@@ -1,6 +1,8 @@
 import { Op } from "sequelize";
 import SpiceLevelMaster from "../models/spiceLevelMaster.model.js";
 import { SPICE_LEVELS } from "../utils/spiceLevel.js";
+import Menu from "../models/menu.model.js";
+import { sequelize } from "../config/db.js";
 
 const parseBoolean = (value) => {
   if (value === undefined) return undefined;
@@ -85,6 +87,17 @@ export const getSpiceLevels = async (req, res) => {
     }
 
     const { rows, count } = await SpiceLevelMaster.findAndCountAll({
+      // menu_count: menu items using the level (it can't be deleted then).
+      attributes: {
+        include: [
+          [
+            sequelize.literal(
+              '(SELECT COUNT(*)::int FROM "menus" AS m WHERE m."spice_level" = "SpiceLevelMaster"."id")',
+            ),
+            "menu_count",
+          ],
+        ],
+      },
       where,
       limit,
       offset: (page - 1) * limit,
@@ -196,6 +209,15 @@ export const deleteSpiceLevel = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Spice level not found.",
+      });
+    }
+
+    // Menu items point at their spice level; keep it while any uses it.
+    const used = await Menu.count({ where: { spice_level: spice.id } });
+    if (used > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `${spice.spice_level} is used by ${used} menu item(s). Change them first, or mark the level inactive.`,
       });
     }
 

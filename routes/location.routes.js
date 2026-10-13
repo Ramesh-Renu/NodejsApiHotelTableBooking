@@ -1,6 +1,13 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { createLocation, getAllLocations, bulkAssignLocations } from "../controllers/location.controller.js";
+import { authorizeRoles } from "../middlewares/role.middleware.js";
+import {
+  createLocation,
+  getAllLocations,
+  updateLocation,
+  deleteLocation,
+  bulkAssignLocations,
+} from "../controllers/location.controller.js";
 
 const router = express.Router();
 
@@ -36,7 +43,7 @@ const router = express.Router();
  *       201:
  *         description: Location created
  */
-router.post("/", createLocation);
+router.post("/", authenticate, authorizeRoles("Admin"), createLocation);
 
 /**
  * @swagger
@@ -62,6 +69,40 @@ router.get("/", getAllLocations);
  *       200:
  *         description: Assignment results
  */
-router.post("/assign", authenticate, bulkAssignLocations);
+router.post("/assign", authenticate, authorizeRoles("Admin"), bulkAssignLocations);
+
+/**
+ * @swagger
+ * /api/locations/{id}:
+ *   put:
+ *     summary: Update a location (Admin)
+ *     tags: [Locations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string, example: "Chennai" }
+ *               description: { type: string }
+ *     responses:
+ *       200: { description: Location updated }
+ *   delete:
+ *     summary: Delete a location no area or hotel uses (Admin)
+ *     tags: [Locations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Location deleted }
+ *       409: { description: Areas or hotels still use it }
+ */
+router.put("/:id", authenticate, authorizeRoles("Admin"), updateLocation);
+router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteLocation);
 
 export default router;

@@ -1,4 +1,8 @@
 import express from "express";
+import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { createStatusMasterUpdate } from "../utils/statusMasterController.js";
+import PaymentStatusMaster from "../models/paymentStatusMaster.model.js";
 import {
   createPaymentStatus,
   getAllPaymentStatuses,
@@ -55,7 +59,7 @@ router.get("/", getAllPaymentStatuses);
  *       201:
  *         description: Payment status created
  */
-router.post("/", createPaymentStatus);
+router.post("/", authenticate, authorizeRoles("Admin"), createPaymentStatus);
 
 /**
  * @swagger
@@ -67,7 +71,34 @@ router.post("/", createPaymentStatus);
  *       200:
  *         description: Payment statuses seeded
  */
-router.post("/seed", seedPaymentStatuses);
+router.post("/seed", authenticate, authorizeRoles("Admin"), seedPaymentStatuses);
+
+/**
+ * @swagger
+ * /api/payment-status/{id}:
+ *   put:
+ *     summary: Rename or recolour a Payment status (Admin). status_id can't change.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string, example: "Food prepared" }
+ *               color_code: { type: string, example: "#14B8A6" }
+ *     responses:
+ *       200: { description: Updated }
+ */
+router.put(
+  "/:id",
+  authenticate,
+  authorizeRoles("Admin"),
+  createStatusMasterUpdate({ Model: PaymentStatusMaster, label: "Payment status" }),
+);
 
 export default router;
 

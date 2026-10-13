@@ -1,4 +1,8 @@
 import express from "express";
+import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { createStatusMasterUpdate } from "../utils/statusMasterController.js";
+import DiningStatusMaster from "../models/diningStatusMaster.model.js";
 import {
   createDiningStatus,
   getAllDiningStatuses,
@@ -70,7 +74,7 @@ const router = express.Router();
  *       500:
  *         description: Server error
  */
-router.post("/", createDiningStatus);
+router.post("/", authenticate, authorizeRoles("Admin"), createDiningStatus);
 
 /**
  * @swagger
@@ -89,5 +93,32 @@ router.post("/", createDiningStatus);
  *                 $ref: '#/components/schemas/DiningStatusMaster'
  */
 router.get("/", getAllDiningStatuses);
+
+/**
+ * @swagger
+ * /api/dining-status/{id}:
+ *   put:
+ *     summary: Rename or recolour a Dining status (Admin). status_id can't change.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string, example: "Food prepared" }
+ *               color_code: { type: string, example: "#14B8A6" }
+ *     responses:
+ *       200: { description: Updated }
+ */
+router.put(
+  "/:id",
+  authenticate,
+  authorizeRoles("Admin"),
+  createStatusMasterUpdate({ Model: DiningStatusMaster, label: "Dining status" }),
+);
 
 export default router;
