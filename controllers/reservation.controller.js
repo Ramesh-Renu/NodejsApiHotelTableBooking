@@ -228,6 +228,17 @@ export const createReservation = async (req, res) => {
       });
     }
 
+    // A booking for N guests holds exactly N seats (the app seats the
+    // party at a table that fits).
+    const guestCount = Number(guest_count) || 0;
+    if (guestCount > 0 && seatIds.length !== guestCount) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Book exactly ${guestCount} seat(s) for ${guestCount} guest(s).`,
+      });
+    }
+
     /* ---------------- SLOT ---------------- */
     // dining_date "YYYY-MM-DD" + reservation_time "HH:mm"; an ISO dining_date
     // (older clients) uses its date part.
