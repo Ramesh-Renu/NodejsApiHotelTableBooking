@@ -25,7 +25,9 @@
 --   4. Order items                     time each dish was ticked prepared
 --   5. Staff personal details          cooks, servers, cleaners (all optional)
 --   6. Hotels                          soft delete (deletedAt)
---   7. Checks
+--   7. Menu categories                 shared by all hotels (merge same names)
+--   8. Installed app (PWA)             pwa_installs (install count for admins)
+--   9. Checks
 -- =============================================================================
 
 BEGIN;
@@ -185,7 +187,90 @@ END $$;
 ALTER TABLE "hotel_tables" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP WITH TIME ZONE;
 
 -- -----------------------------------------------------------------------------
--- 7. Checks (all counts should be 0)
+-- 7. Menu categories shared by all hotels
+--    Categories no longer belong to a hotel; each hotel picks one when it
+--    adds a menu item. Same-named categories (one per hotel before) merge
+--    into the oldest one: menu items and side dishes move to it, and
+--    same-named side dishes in a category become one (menu links kept).
+--    Then hotel_id is cleared. Skipped once no category has a hotel.
+-- -----------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM "menu_categories" WHERE "hotel_id" IS NOT NULL) THEN
+    RAISE NOTICE 'Menu categories already shared: skipped.';
+    RETURN;
+  END IF;
+
+  ALTER TABLE "menu_categories" ALTER COLUMN "hotel_id" DROP NOT NULL;
+  ALTER TABLE "side_dishes"     ALTER COLUMN "hotel_id" DROP NOT NULL;
+
+  CREATE TEMP TABLE category_keep ON COMMIT DROP AS
+  SELECT "id",
+         first_value("id") OVER (
+           PARTITION BY lower(btrim("category_name")) ORDER BY "id"
+         ) AS keep_id,
+         bool_or("is_active") OVER (PARTITION BY lower(btrim("category_name"))) AS any_active
+  FROM "menu_categories";
+
+  UPDATE "menus" m SET "category_id" = k.keep_id
+  FROM category_keep k WHERE m."category_id" = k."id" AND k."id" <> k.keep_id;
+
+  UPDATE "side_dishes" d SET "category_id" = k.keep_id
+  FROM category_keep k WHERE d."category_id" = k."id" AND k."id" <> k.keep_id;
+
+  CREATE TEMP TABLE side_keep ON COMMIT DROP AS
+  SELECT "id",
+         first_value("id") OVER (
+           PARTITION BY "category_id", lower(btrim("side_dish_name")) ORDER BY "id"
+         ) AS keep_id
+  FROM "side_dishes";
+
+  IF to_regclass('public.menu_side_dish_mapping') IS NOT NULL THEN
+    EXECUTE $sql$
+      UPDATE "menu_side_dish_mapping" mp SET "side_dish_id" = s.keep_id
+      FROM side_keep s WHERE mp."side_dish_id" = s."id" AND s."id" <> s.keep_id
+    $sql$;
+    EXECUTE $sql$
+      DELETE FROM "menu_side_dish_mapping" a
+      USING "menu_side_dish_mapping" b
+      WHERE a."menu_id" = b."menu_id" AND a."side_dish_id" = b."side_dish_id"
+        AND a."id" > b."id"
+    $sql$;
+  END IF;
+
+  DELETE FROM "side_dishes" d USING side_keep s
+  WHERE d."id" = s."id" AND s."id" <> s.keep_id;
+
+  UPDATE "menu_categories" c SET "is_active" = k.any_active
+  FROM category_keep k WHERE c."id" = k."id" AND k."id" = k.keep_id;
+
+  DELETE FROM "menu_categories" c USING category_keep k
+  WHERE c."id" = k."id" AND k."id" <> k.keep_id;
+
+  UPDATE "menu_categories" SET "hotel_id" = NULL WHERE "hotel_id" IS NOT NULL;
+  UPDATE "side_dishes"     SET "hotel_id" = NULL WHERE "hotel_id" IS NOT NULL;
+END $$;
+
+-- -----------------------------------------------------------------------------
+-- 8. Installed app (PWA): one row per device that runs the installed app,
+--    so admins can see how many users installed it.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "pwa_installs" (
+  "id"           SERIAL PRIMARY KEY,
+  "device_id"    VARCHAR(64) NOT NULL,
+  "user_id"      INTEGER,
+  "platform"     VARCHAR(20),
+  "user_agent"   VARCHAR(500),
+  "installed_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  "last_seen_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  "createdAt"    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  "updatedAt"    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "pwa_installs_device_id_unique"
+  ON "pwa_installs" ("device_id");
+
+-- -----------------------------------------------------------------------------
+-- 9. Checks (all counts should be 0)
 -- -----------------------------------------------------------------------------
 SELECT 'missing new columns' AS check, COUNT(*) FROM (VALUES
     ('reservation_orders',      'payment_method'),
@@ -205,6 +290,8 @@ SELECT 'missing new columns' AS check, COUNT(*) FROM (VALUES
 UNION ALL
 SELECT 'side_dishes table missing', CASE WHEN to_regclass('public.side_dishes') IS NULL THEN 1 ELSE 0 END
 UNION ALL
+SELECT 'pwa_installs table missing', CASE WHEN to_regclass('public.pwa_installs') IS NULL THEN 1 ELSE 0 END
+UNION ALL
 SELECT 'menu side dish links not on side_dishes',
   CASE
     WHEN to_regclass('public.menu_side_dish_mapping') IS NULL THEN 0
@@ -215,6 +302,18 @@ SELECT 'menu side dish links not on side_dishes',
         AND confrelid = to_regclass('public.side_dishes')
     ) THEN 0
     ELSE 1
-  END;
+  END
+UNION ALL
+SELECT 'menu categories still tied to a hotel', COUNT(*)
+  FROM "menu_categories" WHERE "hotel_id" IS NOT NULL
+UNION ALL
+SELECT 'duplicate menu category names', COUNT(*) FROM (
+  SELECT lower(btrim("category_name")) FROM "menu_categories"
+  GROUP BY 1 HAVING COUNT(*) > 1
+) d
+UNION ALL
+SELECT 'menu items without a category', COUNT(*)
+  FROM "menus" m
+  WHERE NOT EXISTS (SELECT 1 FROM "menu_categories" c WHERE c."id" = m."category_id");
 
 COMMIT;

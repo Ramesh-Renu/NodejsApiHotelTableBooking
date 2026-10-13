@@ -1,6 +1,12 @@
 import express from "express";
-import { createArea, getAllAreas } from "../controllers/area.controller.js";
+import {
+  createArea,
+  getAllAreas,
+  updateArea,
+  deleteArea,
+} from "../controllers/area.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizeRoles } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -45,7 +51,7 @@ const router = express.Router();
  *         description: Area already exists
  */
 // Create area (admin)
-router.post("/", authenticate, createArea);
+router.post("/", authenticate, authorizeRoles("Admin"), createArea);
 
 /**
  * @swagger
@@ -77,5 +83,47 @@ router.post("/", authenticate, createArea);
  */
 // List areas
 router.get("/", getAllAreas);
+
+/**
+ * @swagger
+ * /api/areas/{id}:
+ *   put:
+ *     summary: Update an area (Admin)
+ *     tags: [Areas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string, example: "T Nagar" }
+ *               description: { type: string }
+ *               location_id: { type: integer, example: 1 }
+ *     responses:
+ *       200: { description: Area updated }
+ *       409: { description: Another area has this name }
+ *   delete:
+ *     summary: Delete an area that no hotel uses (Admin)
+ *     tags: [Areas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Area deleted }
+ *       409: { description: Hotels still use this area }
+ */
+router.put("/:id", authenticate, authorizeRoles("Admin"), updateArea);
+router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteArea);
 
 export default router;

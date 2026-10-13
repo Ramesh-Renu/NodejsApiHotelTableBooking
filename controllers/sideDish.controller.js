@@ -25,7 +25,7 @@ const sideDishIncludes = [
   },
 ];
 
-// A side dish belongs to a category; its hotel is always the category's hotel.
+// A side dish belongs to one (shared) menu category, not to a hotel.
 const findDuplicate = (categoryId, name, excludeId) =>
   SideDish.findOne({
     where: {
@@ -66,7 +66,7 @@ export const createSideDish = async (req, res) => {
     }
 
     const sideDish = await SideDish.create({
-      hotel_id: category.hotel_id,
+      hotel_id: null, // side dishes follow their (shared) category
       category_id: category.id,
       side_dish_name: name,
       description,

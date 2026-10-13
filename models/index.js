@@ -17,6 +17,7 @@ import MenuSideDish from "./menuSideDish.model.js";
 import MenuSideDishMapping from "./menuSideDishMapping.model.js";
 import SideDish from "./sideDish.model.js";
 import RegisterUsersData from "./user.model.js";
+import PwaInstall from "./pwaInstall.model.js";
 
 /* ==========================================================
    HOTEL ↔ FLOORS
@@ -268,5 +269,6 @@ export {
   SpiceLevelMaster,
   MenuSideDish,
   MenuSideDishMapping,
-  SideDish
+  SideDish,
+  PwaInstall
 };

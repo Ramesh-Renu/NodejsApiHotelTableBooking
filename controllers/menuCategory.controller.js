@@ -25,43 +25,32 @@ const categoryInclude = {
 
 export const createMenuCategory = async (req, res) => {
   try {
-    const { hotel_id, category_name, description, display_order, is_active } =
-      req.body;
+    // Categories are shared by every hotel: no hotel_id, one per name.
+    const { category_name, description, display_order, is_active } = req.body;
 
     const categoryName =
       typeof category_name === "string" ? category_name.trim() : "";
 
-    if (!hotel_id || !categoryName) {
+    if (!categoryName) {
       return res.status(400).json({
         success: false,
-        message: "hotel_id and category_name are required.",
-      });
-    }
-
-    const hotel = await HotelTable.findByPk(hotel_id);
-    if (!hotel) {
-      return res.status(404).json({
-        success: false,
-        message: "Hotel not found.",
+        message: "category_name is required.",
       });
     }
 
     const existingCategory = await MenuCategory.findOne({
-      where: {
-        hotel_id,
-        category_name: { [Op.iLike]: categoryName },
-      },
+      where: { category_name: { [Op.iLike]: categoryName } },
     });
 
     if (existingCategory) {
       return res.status(409).json({
         success: false,
-        message: "Menu category already exists for this hotel.",
+        message: `A "${existingCategory.category_name}" category already exists.`,
       });
     }
 
     const category = await MenuCategory.create({
-      hotel_id,
+      hotel_id: null,
       category_name: categoryName,
       description,
       display_order,
@@ -93,7 +82,7 @@ export const createMenuCategory = async (req, res) => {
 
 export const getMenuCategories = async (req, res) => {
   try {
-    let { page = 1, limit = 10, search, hotel_id, is_active } = req.query;
+    let { page = 1, limit = 10, search, is_active } = req.query;
     page = Number(page);
     limit = Number(limit);
 
@@ -109,8 +98,9 @@ export const getMenuCategories = async (req, res) => {
       });
     }
 
+    // Categories are shared by every hotel, so hotel_id (still accepted from
+    // older clients) does not filter them.
     const where = {};
-    if (hotel_id) where.hotel_id = hotel_id;
 
     const active = parseBoolean(is_active);
     if (active === null) {
@@ -128,6 +118,18 @@ export const getMenuCategories = async (req, res) => {
 
     const { rows, count } = await MenuCategory.findAndCountAll({
       where,
+      // menu_count: how many menu items use the category (a category with
+      // items can't be deleted, only made inactive).
+      attributes: {
+        include: [
+          [
+            sequelize.literal(
+              '(SELECT COUNT(*)::int FROM "menus" AS m WHERE m."category_id" = "MenuCategory"."id")',
+            ),
+            "menu_count",
+          ],
+        ],
+      },
       include: [categoryInclude],
       limit,
       offset: (page - 1) * limit,
@@ -187,8 +189,8 @@ export const updateMenuCategory = async (req, res) => {
       });
     }
 
+    // No hotel_id: categories are shared by every hotel.
     const allowedFields = [
-      "hotel_id",
       "category_name",
       "description",
       "display_order",
@@ -216,24 +218,10 @@ export const updateMenuCategory = async (req, res) => {
       }
     }
 
-    const hotelId = updates.hotel_id ?? category.hotel_id;
-    if (
-      updates.hotel_id !== undefined &&
-      !(await HotelTable.findByPk(hotelId))
-    ) {
-      return res.status(404).json({
-        success: false,
-        message: "Hotel not found.",
-      });
-    }
-
-    if (updates.category_name !== undefined || updates.hotel_id !== undefined) {
+    if (updates.category_name !== undefined) {
       const duplicate = await MenuCategory.findOne({
         where: {
-          hotel_id: hotelId,
-          category_name: {
-            [Op.iLike]: updates.category_name ?? category.category_name,
-          },
+          category_name: { [Op.iLike]: updates.category_name },
           id: { [Op.ne]: category.id },
         },
       });
@@ -241,22 +229,12 @@ export const updateMenuCategory = async (req, res) => {
       if (duplicate) {
         return res.status(409).json({
           success: false,
-          message: "Menu category already exists for this hotel.",
+          message: `A "${duplicate.category_name}" category already exists.`,
         });
       }
     }
 
-    await sequelize.transaction(async (transaction) => {
-      await category.update(updates, { transaction });
-
-      // Side dishes always belong to their category's hotel.
-      if (updates.hotel_id !== undefined) {
-        await SideDish.update(
-          { hotel_id: category.hotel_id },
-          { where: { category_id: category.id }, transaction },
-        );
-      }
-    });
+    await category.update(updates);
 
     return res.json({
       success: true,

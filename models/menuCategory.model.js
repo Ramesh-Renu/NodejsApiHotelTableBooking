@@ -11,9 +11,10 @@ const MenuCategory = sequelize.define(
       primaryKey: true,
     },
 
+    // NULL: menu categories are shared by every hotel (kept for old data).
     hotel_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: HotelTable,
         key: "id",

@@ -101,17 +101,19 @@ export const createMenu = async (req, res) => {
       });
     }
 
-    const category = await MenuCategory.findOne({
-      where: {
-        id: category_id,
-        hotel_id,
-      },
-    });
+    // Categories are shared by every hotel; any active one can be used.
+    const category = await MenuCategory.findByPk(category_id);
 
     if (!category) {
       return res.status(404).json({
         success: false,
         message: "Menu category not found.",
+      });
+    }
+    if (!category.is_active) {
+      return res.status(400).json({
+        success: false,
+        message: `The "${category.category_name}" category is inactive. Choose another category.`,
       });
     }
 

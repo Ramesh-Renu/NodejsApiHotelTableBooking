@@ -12,9 +12,10 @@ const SideDish = sequelize.define(
       primaryKey: true,
     },
 
+    // NULL: side dishes belong to a (shared) menu category, not a hotel.
     hotel_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: HotelTable,
         key: "id",

@@ -468,6 +468,88 @@ const moveMenuSideDishesToCategories = async () => {
   console.log("Menu side dishes now come from each menu's category");
 };
 
+// Menu categories used to belong to one hotel; they are now shared by all
+// hotels (each hotel picks one when adding a menu item). Merge same-named
+// categories into the oldest one (menu items and side dishes move with
+// them; same-named side dishes become one), then clear hotel_id. Runs once:
+// afterwards no category has a hotel.
+const shareMenuCategories = async () => {
+  const [[state]] = await sequelize.query(`
+    SELECT to_regclass('public.menu_categories') AS categories,
+           to_regclass('public.side_dishes') AS side_dishes,
+           to_regclass('public.menu_side_dish_mapping') AS mapping
+  `);
+  if (!state.categories) return;
+  const [[pending]] = await sequelize.query(
+    `SELECT count(*)::int AS n FROM "menu_categories" WHERE "hotel_id" IS NOT NULL`,
+  );
+  if (!pending.n) return;
+
+  await sequelize.transaction(async (transaction) => {
+    const run = (sql) => sequelize.query(sql, { transaction });
+
+    await run(`ALTER TABLE "menu_categories" ALTER COLUMN "hotel_id" DROP NOT NULL`);
+    await run(`
+      CREATE TEMP TABLE category_keep ON COMMIT DROP AS
+      SELECT "id",
+             first_value("id") OVER (
+               PARTITION BY lower(btrim("category_name")) ORDER BY "id"
+             ) AS keep_id,
+             bool_or("is_active") OVER (PARTITION BY lower(btrim("category_name"))) AS any_active
+      FROM "menu_categories"
+    `);
+    await run(`
+      UPDATE "menus" m SET "category_id" = k.keep_id
+      FROM category_keep k WHERE m."category_id" = k."id" AND k."id" <> k.keep_id
+    `);
+
+    if (state.side_dishes) {
+      await run(`ALTER TABLE "side_dishes" ALTER COLUMN "hotel_id" DROP NOT NULL`);
+      await run(`
+        UPDATE "side_dishes" d SET "category_id" = k.keep_id
+        FROM category_keep k WHERE d."category_id" = k."id" AND k."id" <> k.keep_id
+      `);
+      await run(`
+        CREATE TEMP TABLE side_keep ON COMMIT DROP AS
+        SELECT "id",
+               first_value("id") OVER (
+                 PARTITION BY "category_id", lower(btrim("side_dish_name")) ORDER BY "id"
+               ) AS keep_id
+        FROM "side_dishes"
+      `);
+      if (state.mapping) {
+        await run(`
+          UPDATE "menu_side_dish_mapping" mp SET "side_dish_id" = s.keep_id
+          FROM side_keep s WHERE mp."side_dish_id" = s."id" AND s."id" <> s.keep_id
+        `);
+        await run(`
+          DELETE FROM "menu_side_dish_mapping" a
+          USING "menu_side_dish_mapping" b
+          WHERE a."menu_id" = b."menu_id" AND a."side_dish_id" = b."side_dish_id"
+            AND a."id" > b."id"
+        `);
+      }
+      await run(`
+        DELETE FROM "side_dishes" d USING side_keep s
+        WHERE d."id" = s."id" AND s."id" <> s.keep_id
+      `);
+      await run(`UPDATE "side_dishes" SET "hotel_id" = NULL WHERE "hotel_id" IS NOT NULL`);
+    }
+
+    await run(`
+      UPDATE "menu_categories" c SET "is_active" = k.any_active
+      FROM category_keep k WHERE c."id" = k."id" AND k."id" = k.keep_id
+    `);
+    await run(`
+      DELETE FROM "menu_categories" c USING category_keep k
+      WHERE c."id" = k."id" AND k."id" <> k.keep_id
+    `);
+    await run(`UPDATE "menu_categories" SET "hotel_id" = NULL WHERE "hotel_id" IS NOT NULL`);
+  });
+
+  console.log("Menu categories are now shared by all hotels");
+};
+
 export const connectDB = async () => {
   try {
     await sequelize.authenticate();
@@ -479,6 +561,7 @@ export const connectDB = async () => {
     await prepareMenuSpiceLevel();
     await dropGlobalMenuCodeUnique();
     await moveMenuSideDishesToCategories();
+    await shareMenuCategories();
 
     // Uncomment only if you want Sequelize to create/update tables
     await sequelize.sync({ alter: true });

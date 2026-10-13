@@ -29,6 +29,7 @@ import serverRoutes from "./routes/server.routes.js";
 import cleanerRoutes from "./routes/cleaner.routes.js";
 import menuSideDishRoutes from "./routes/menuSideDish.routes.js";
 import sideDishRoutes from "./routes/sideDish.routes.js";
+import pwaInstallRoutes from "./routes/pwaInstall.routes.js";
 import "./models/index.js";
 import { backfillTableCodes } from "./utils/tableCode.js";
 import { backfillOrderOwners } from "./utils/orderOwner.js";
@@ -69,6 +70,7 @@ app.use("/api/payment-status", paymentStatusRoutes);
 app.use("/api/spice-levels", spiceLevelRoutes);
 app.use("/api/menu-side-dishes", menuSideDishRoutes);
 app.use("/api/side-dishes", sideDishRoutes);
+app.use("/api/pwa", pwaInstallRoutes);
 
 /* Swagger */
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
