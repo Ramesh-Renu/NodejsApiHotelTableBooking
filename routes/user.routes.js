@@ -81,9 +81,10 @@ router.get("/profile", authenticate, async (req, res) => {
       });
     }
 
+    // The session role (from the token) wins: an Admin who signed in as Guest is a User.
     res.json({
       message: "Protected profile",
-      user,
+      user: { ...user.toJSON(), role: req.user.role ?? user.role },
     });
   } catch (error) {
     console.error("Profile error:", error);

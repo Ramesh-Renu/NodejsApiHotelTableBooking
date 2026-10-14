@@ -4,7 +4,7 @@ import RefreshToken from "../models/refreshToken.model.js";
 import { sendOtpSms } from "../services/sms.service.js";
 
 export const verifyOtp = async (req, res) => {
-  const { mobilenumber, otp } = req.body;
+  const { mobilenumber, otp, loginAs } = req.body;
 
   if (!mobilenumber || !otp) {
     return res.status(400).json({
@@ -33,12 +33,24 @@ export const verifyOtp = async (req, res) => {
     });
   }
 
+  // 🎭 Role for this session comes from the login tab:
+  // "guest" → everyone is a User (Admins too); "restaurant" → Admins only.
+  const isAdminAccount = String(user.role || "").toLowerCase() === "admin";
+  if (loginAs === "restaurant" && !isAdminAccount) {
+    return res.status(403).json({
+      success: false,
+      message:
+        "This number is not registered as a restaurant account. Please sign in as Guest.",
+    });
+  }
+  const sessionRole = loginAs === "guest" && isAdminAccount ? "User" : user.role;
+
   // 🔐 Create JWT with role
   const accessToken = jwt.sign(
     {
       id: user.id,
       mobilenumber: user.mobilenumber,
-      role: user.role,
+      role: sessionRole,
     },
     process.env.JWT_ACCESS_SECRET,
     { expiresIn: "15m" }
@@ -48,7 +60,7 @@ export const verifyOtp = async (req, res) => {
     {
       id: user.id,
       mobilenumber: user.mobilenumber,
-      role: user.role,
+      role: sessionRole,
     },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: "7d" }
@@ -63,7 +75,7 @@ export const verifyOtp = async (req, res) => {
     data: {
       success: true,
       message: "Login successful",
-      role: user.role,
+      role: sessionRole,
       accessToken,
       refreshToken,
     },

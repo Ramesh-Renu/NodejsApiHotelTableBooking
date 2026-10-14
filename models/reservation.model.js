@@ -24,6 +24,10 @@ const Reservation = sequelize.define(
     cleaner_id: { type: DataTypes.INTEGER, allowNull: true },
     // Party size chosen in the slot picker.
     guest_count: { type: DataTypes.INTEGER, allowNull: true },
+    // Guest the table is for: the customer, or who staff booked it for
+    // (phone / walk-in bookings made from the Reservations page).
+    customer_name: { type: DataTypes.STRING(100), allowNull: true },
+    customer_mobile: { type: DataTypes.STRING(15), allowNull: true },
   },
   {
     tableName: "reservations",

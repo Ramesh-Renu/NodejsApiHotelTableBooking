@@ -268,9 +268,15 @@ export const createReservation = async (req, res) => {
     /* ---------------- VALIDATE SEATS FOR THE SLOT ---------------- */
     const held = await getHeldSeats(hotel_id, slotStart, { transaction });
     const live = slotIsLive(slotStart);
+    // Same rule as the table list (table.controller): overlapping bookings are
+    // covered by `held`; a leftover "booked" seat status doesn't block, only
+    // live states (seated / cleaning) do.
     const liveBlocked = live
       ? await Seat.findAll({
-          where: { id: seatIds, status: { [Op.ne]: SEAT_STATUS.AVAILABLE } },
+          where: {
+            id: seatIds,
+            status: { [Op.notIn]: [SEAT_STATUS.AVAILABLE, SEAT_STATUS.BOOKED] },
+          },
           attributes: ["id"],
           transaction,
           lock: transaction.LOCK.UPDATE,
@@ -294,8 +300,9 @@ export const createReservation = async (req, res) => {
         end_time: slotEndTime(reservation_time),
         guest_count: Number(guest_count) || null,
         seat_status,
-        customer_name,
-        customer_mobile,
+        // Who the table is for (staff may book for a phone / walk-in guest).
+        customer_name: String(customer_name ?? "").trim().slice(0, 100) || null,
+        customer_mobile: String(customer_mobile ?? "").replace(/\D/g, "").slice(0, 15) || null,
         dining_status: RESERVATION_STATUS.CONFIRMED, // <-- default value
         dining_date: slotStart,
       },
@@ -520,7 +527,10 @@ export const getDashboardSummary = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-    const isAdmin = [0, 1].includes(user.user_type_id);
+    // Admins signed in as Guest carry a "User" session role.
+    const isAdmin =
+      [0, 1].includes(user.user_type_id) &&
+      String(req.user.role || "").toLowerCase() === "admin";
     const reservationScope = isAdmin ? {} : { user_id: req.user.id };
 
     const params = req.method === "POST" ? req.body : req.query;
@@ -637,7 +647,11 @@ export const getReservations = async (req, res) => {
     };
 
     // 👤 Normal users → only their data
-    if (![0, 1].includes(user_type_id)) {
+    // Admins signed in as Guest carry a "User" session role.
+    const isAdminSession =
+      [0, 1].includes(user_type_id) &&
+      String(req.user.role || "").toLowerCase() === "admin";
+    if (!isAdminSession) {
       whereCondition.user_id = loggedInUserId;
     }
 

@@ -272,6 +272,7 @@ export const getMenus = async (req, res) => {
 
     const { rows, count } = await Menu.findAndCountAll({
       where,
+      distinct: true, // count menus, not menu × side-dish rows
       attributes: [
         "id",
         "hotel_id",
@@ -302,6 +303,8 @@ export const getMenus = async (req, res) => {
           model: HotelTable,
           as: "hotel",
           attributes: ["id", "hotel_name"],
+          // Only dishes of existing hotels: a deleted hotel's dishes can't be ordered.
+          required: true,
         },
         {
           model: SpiceLevelMaster,

@@ -286,7 +286,11 @@ export const updateOrderItems = async (req, res) => {
     const existing = wanted.get(menuId);
     wanted.set(menuId, {
       quantity: (existing?.quantity || 0) + quantity,
-      notes: item.notes ?? existing?.notes ?? null,
+      // undefined = keep the saved note, "" / null = clear it
+      notes:
+        item.notes === undefined
+          ? existing?.notes
+          : String(item.notes ?? "").trim() || null,
       // undefined = keep / default, null = no cook
       cook_id:
         item.cook_id === undefined
@@ -352,16 +356,17 @@ export const updateOrderItems = async (req, res) => {
         const total = unitPrice * quantity;
         subtotal += total;
         const nextCook = cookId === undefined ? existing.cook_id : cookId;
+        const nextNotes = notes === undefined ? existing.notes : notes;
         if (
           existing.quantity !== quantity ||
-          (notes ?? null) !== existing.notes ||
+          (nextNotes ?? null) !== (existing.notes ?? null) ||
           (nextCook ?? null) !== (existing.cook_id ?? null)
         ) {
           await existing.update(
             {
               quantity,
               total_price: total,
-              notes: notes ?? existing.notes,
+              notes: nextNotes ?? null,
               cook_id: nextCook ?? null,
             },
             { transaction },
@@ -389,7 +394,7 @@ export const updateOrderItems = async (req, res) => {
           quantity,
           unit_price: unitPrice,
           total_price: total,
-          notes,
+          notes: notes ?? null,
           // New items default to the order's cook.
           cook_id: cookId === undefined ? order.cook_id ?? null : cookId,
         },
@@ -416,7 +421,7 @@ export const updateOrderItems = async (req, res) => {
         {
           model: ReservationOrderItem,
           as: "items",
-          attributes: ["id", "menu_id", "menu_name", "quantity", "unit_price", "total_price", "item_status", "ready_at", "cook_id"],
+          attributes: ["id", "menu_id", "menu_name", "quantity", "unit_price", "total_price", "item_status", "ready_at", "cook_id", "notes"],
           include: [
             {
               model: Cook,
@@ -547,6 +552,7 @@ export const getOrders = async (req, res) => {
             "item_status",
             "ready_at",
             "cook_id",
+            "notes",
           ],
           include: [
             {

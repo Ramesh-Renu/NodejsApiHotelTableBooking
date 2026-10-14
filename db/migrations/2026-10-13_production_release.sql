@@ -38,7 +38,8 @@ BEGIN;
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS "side_dishes" (
   "id"             SERIAL PRIMARY KEY,
-  "hotel_id"       INTEGER NOT NULL
+  -- NULL: side dishes follow their (shared) menu category, not a hotel.
+  "hotel_id"       INTEGER
                    REFERENCES "hotel_tables" ("id") ON UPDATE CASCADE,
   "category_id"    INTEGER NOT NULL
                    REFERENCES "menu_categories" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
@@ -198,6 +199,10 @@ ALTER TABLE "hotel_tables" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP WITH T
 --    same-named side dishes in a category become one (menu links kept).
 --    Then hotel_id is cleared. Skipped once no category has a hotel.
 -- -----------------------------------------------------------------------------
+-- Always: categories / side dishes are saved without a hotel from now on.
+ALTER TABLE "menu_categories" ALTER COLUMN "hotel_id" DROP NOT NULL;
+ALTER TABLE "side_dishes"     ALTER COLUMN "hotel_id" DROP NOT NULL;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM "menu_categories" WHERE "hotel_id" IS NOT NULL) THEN
