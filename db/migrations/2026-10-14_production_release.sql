@@ -22,6 +22,7 @@
 --   1. Reservations   guest name / mobile (bookings staff make for a guest)
 --   2. Orders         when and by whom an order was cancelled
 --   3. Reservations   stage history (booking stage tracker)
+--   3b. Seats         free seats still held by completed / cancelled bookings
 --   4. Checks
 -- =============================================================================
 
@@ -62,6 +63,17 @@ UPDATE "reservations"
  WHERE "status_history" = '[]'::jsonb;
 
 -- -----------------------------------------------------------------------------
+-- 3b. Seats still held by finished bookings: free them. (Bookings completed
+--     by older code kept their seats marked Booked, so tables looked Full.)
+--     reservations.dining_status: 3 = Completed, 4 = Cancelled.
+-- -----------------------------------------------------------------------------
+UPDATE "seats" s
+   SET "status" = 4, "reservation_id" = NULL
+  FROM "reservations" r
+ WHERE s."reservation_id" = r."id"
+   AND r."dining_status" IN (3, 4);
+
+-- -----------------------------------------------------------------------------
 -- 4. Checks (expect 0 in every row)
 -- -----------------------------------------------------------------------------
 SELECT 'reservations missing customer_name column' AS "check", COUNT(*) AS "count"
@@ -84,6 +96,10 @@ SELECT 'reservation_orders missing cancellation columns', 4 - COUNT(*)
     AND column_name IN ('cancelled_at', 'cancelled_by', 'cancelled_by_name', 'cancel_reason')
 UNION ALL
 SELECT 'reservations without stage history', COUNT(*)
-  FROM "reservations" WHERE "status_history" = '[]'::jsonb;
+  FROM "reservations" WHERE "status_history" = '[]'::jsonb
+UNION ALL
+SELECT 'seats held by finished bookings', COUNT(*)
+  FROM "seats" s JOIN "reservations" r ON r."id" = s."reservation_id"
+ WHERE r."dining_status" IN (3, 4);
 
 COMMIT;

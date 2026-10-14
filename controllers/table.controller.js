@@ -4,6 +4,7 @@ import Table from "../models/table.model.js";
 import Seat from "../models/seat.model.js";
 import Reservation from "../models/reservation.model.js";
 import { SEAT_STATUS } from "../utils/seatStatus.js";
+import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
 import { assignMissingTableCodes } from "../utils/tableCode.js";
 import { getHeldSeats, parseSlot, slotIsLive } from "../utils/slotAvailability.js";
 /**
@@ -139,13 +140,21 @@ export const getTablesByHotel = async (req, res) => {
     /* ---------------- FETCH RESERVATIONS ---------------- */
     const reservations = await Reservation.findAll({
       where: { hotel_id: hotelTableId },
-      attributes: ["user_id", "seat_status"],
+      attributes: ["id", "user_id", "seat_status", "dining_status"],
     });
+
+    // Finished bookings (completed / cancelled) never hold a seat, even when an
+    // older status change left the seat marked with them.
+    const CLOSED = [RESERVATION_STATUS.COMPLETED, RESERVATION_STATUS.CANCELLED];
+    const closedReservationIds = new Set(
+      reservations.filter((r) => CLOSED.includes(r.dining_status)).map((r) => Number(r.id)),
+    );
 
     /* ---------------- BUILD seat_id → user_id MAP ---------------- */
     const seatUserMap = new Map();
 
     for (const r of reservations) {
+      if (CLOSED.includes(r.dining_status)) continue;
       const seatStatus =
         typeof r.seat_status === "string"
           ? JSON.parse(r.seat_status)
@@ -178,6 +187,10 @@ export const getTablesByHotel = async (req, res) => {
 
             let status = seat.status;
             let slotUserId = null;
+            // Stale hold from a finished booking: the seat is free.
+            if (seat.reservation_id && closedReservationIds.has(Number(seat.reservation_id))) {
+              status = SEAT_STATUS.AVAILABLE;
+            }
             if (heldSeats) {
               const held = heldSeats.get(Number(seat.id));
               if (held) {
