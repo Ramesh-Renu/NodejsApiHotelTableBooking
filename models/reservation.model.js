@@ -28,6 +28,9 @@ const Reservation = sequelize.define(
     // (phone / walk-in bookings made from the Reservations page).
     customer_name: { type: DataTypes.STRING(100), allowNull: true },
     customer_mobile: { type: DataTypes.STRING(15), allowNull: true },
+    // When the booking entered each stage: [{ status, at }], oldest first
+    // (utils/reservationStatus.js withStageEntry). Shown as the stage tracker.
+    status_history: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
   },
   {
     tableName: "reservations",

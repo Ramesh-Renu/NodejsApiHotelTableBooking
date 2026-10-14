@@ -4,7 +4,7 @@ import HotelTable from "../models/hotelTable.model.js";
 import Floor from "../models/floor.model.js";
 import { sequelize } from "../config/db.js";
 import { SEAT_STATUS } from "../utils/seatStatus.js";
-import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
+import { RESERVATION_STATUS, withStageEntry } from "../utils/reservationStatus.js";
 import CancelReservation from "../models/CancelledReservation.js";
 import RegisterUsersData from "../models/user.model.js";
 import Table from "../models/table.model.js";
@@ -304,6 +304,7 @@ export const createReservation = async (req, res) => {
         customer_name: String(customer_name ?? "").trim().slice(0, 100) || null,
         customer_mobile: String(customer_mobile ?? "").replace(/\D/g, "").slice(0, 15) || null,
         dining_status: RESERVATION_STATUS.CONFIRMED, // <-- default value
+        status_history: withStageEntry(null, RESERVATION_STATUS.CONFIRMED),
         dining_date: slotStart,
       },
       { transaction },
@@ -747,7 +748,10 @@ export const cancelReservationSeats = async (req, res) => {
 
     // ❌ Cancel reservation
     await reservation.update(
-      { dining_status: RESERVATION_STATUS.CANCELLED },
+      {
+        dining_status: RESERVATION_STATUS.CANCELLED,
+        status_history: withStageEntry(reservation, RESERVATION_STATUS.CANCELLED),
+      },
       { transaction },
     );
 
@@ -879,6 +883,20 @@ console.log('seatStatusToUpdate',seatStatusToUpdate);
       }
       reservationUpdate[field] = staff.id;
     }
+
+    // A table being served needs its server (chosen on confirm, or now).
+    const serverAfter =
+      reservationUpdate.server_id !== undefined ? reservationUpdate.server_id : reservation.server_id;
+    if (Number(dining_status) === RESERVATION_STATUS.SERVING && !serverAfter) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "Assign a server before moving this booking to Serving.",
+      });
+    }
+
+    // Stage tracker: note when the booking entered this stage.
+    reservationUpdate.status_history = withStageEntry(reservation, dining_status);
 
     /* ---------------- UPDATE RESERVATION ---------------- */
     await reservation.update(reservationUpdate, { transaction });

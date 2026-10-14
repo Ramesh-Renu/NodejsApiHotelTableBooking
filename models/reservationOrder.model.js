@@ -142,6 +142,26 @@ const ReservationOrder = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+
+    // Who cancelled the order and when. The name is kept as shown on the
+    // board: "Admin" for staff, else the customer's name at that time.
+    cancelled_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    cancelled_by: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    cancelled_by_name: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+    // Why it was cancelled (picked or typed in the cancel dialog).
+    cancel_reason: {
+      type: DataTypes.STRING(200),
+      allowNull: true,
+    },
   },
   {
     tableName: "reservation_orders",

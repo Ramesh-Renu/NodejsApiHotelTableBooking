@@ -12,7 +12,30 @@ import Server from "../models/server.model.js";
 import { findAssignableStaff } from "../utils/staffController.js";
 import { ORDER_STATUS, CLOSED_ORDER_STATUSES } from "../utils/orderStatus.js";
 import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
-import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
+import { RESERVATION_STATUS, withStageEntry } from "../utils/reservationStatus.js";
+import RegisterUsersData from "../models/user.model.js";
+
+/**
+ * Who cancels an order, for the Cancelled card: "Admin" for a staff session,
+ * else the customer's name (kept on the order, so later renames don't change it).
+ */
+const cancellationStamp = async (req, transaction) => {
+  const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+  let name = "Admin";
+  if (!isAdmin) {
+    const user = req.user?.id
+      ? await RegisterUsersData.findByPk(req.user.id, { attributes: ["name"], transaction })
+      : null;
+    name = user?.name || "Customer";
+  }
+  const reason = String(req.body?.reason ?? req.body?.cancel_reason ?? "").trim();
+  return {
+    cancelled_at: new Date(),
+    cancelled_by: req.user?.id ?? null,
+    cancelled_by_name: String(name).slice(0, 100),
+    cancel_reason: reason.slice(0, 200) || null,
+  };
+};
 
 const PAYMENT_METHODS = ["cash", "card", "upi"];
 
@@ -845,8 +868,30 @@ export const updateOrderStatus = async (req, res) => {
     ) {
       order.completed_at = now;
     }
+    if (nextStatus === ORDER_STATUS.CANCELLED && !order.cancelled_at) {
+      order.set(await cancellationStamp(req));
+    }
 
     await order.save();
+
+    // Food reached the table: a Seated booking moves on to Serving. (Seated and
+    // Serving keep the same seat state, so only the booking status changes.)
+    // Serving needs a server: a booking without one takes the server who
+    // served this order.
+    let reservationStatus;
+    if (nextStatus === ORDER_STATUS.SERVED && order.reservation_id) {
+      const booking = await Reservation.findOne({
+        where: { id: order.reservation_id, dining_status: RESERVATION_STATUS.SEATED },
+      });
+      if (booking) {
+        await booking.update({
+          dining_status: RESERVATION_STATUS.SERVING,
+          status_history: withStageEntry(booking, RESERVATION_STATUS.SERVING),
+          ...(!booking.server_id && order.server_id ? { server_id: order.server_id } : {}),
+        });
+        reservationStatus = RESERVATION_STATUS.SERVING;
+      }
+    }
 
     // A Ready order means the kitchen is done: every dish counts as prepared.
     if (nextStatus === ORDER_STATUS.READY) {
@@ -879,6 +924,8 @@ export const updateOrderStatus = async (req, res) => {
       success: true,
       message: "Order status updated successfully",
       data: order,
+      // Set when this moved the booking on (Seated → Serving).
+      ...(reservationStatus ? { reservation_status: reservationStatus } : {}),
     });
   } catch (error) {
     return res.status(500).json({
@@ -1091,6 +1138,7 @@ export const cancelOrder = async (req, res) => {
     }
 
     order.order_status = ORDER_STATUS.CANCELLED;
+    order.set(await cancellationStamp(req, transaction));
 
     await order.save({
       transaction,
@@ -1114,6 +1162,16 @@ export const cancelOrder = async (req, res) => {
       success: true,
 
       message: "Order cancelled successfully",
+
+      // For the Cancelled card (shown without reloading the board).
+      data: {
+        id: order.id,
+        order_status: order.order_status,
+        cancelled_at: order.cancelled_at,
+        cancelled_by: order.cancelled_by,
+        cancelled_by_name: order.cancelled_by_name,
+        cancel_reason: order.cancel_reason,
+      },
     });
   } catch (error) {
     await transaction.rollback();
