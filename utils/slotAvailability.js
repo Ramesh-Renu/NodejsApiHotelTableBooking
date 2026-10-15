@@ -25,6 +25,16 @@ export const parseSlot = (date, time) => {
 
 export const slotEnd = (start) => new Date(start.getTime() + SLOT_MS);
 
+/** Date → "6:15 PM" in restaurant time (TZ_OFFSET), whatever the server's zone. */
+export const formatLocalTime = (date) => {
+  const [, sign, hh, mm] = /^([+-])(\d{2}):(\d{2})$/.exec(TZ_OFFSET) || [null, "+", "05", "30"];
+  const offsetMin = (sign === "-" ? -1 : 1) * (Number(hh) * 60 + Number(mm));
+  const local = new Date(new Date(date).getTime() + offsetMin * 60000);
+  const hours = local.getUTCHours();
+  const minutes = String(local.getUTCMinutes()).padStart(2, "0");
+  return `${hours % 12 || 12}:${minutes} ${hours < 12 ? "AM" : "PM"}`;
+};
+
 /** "20:30" → "21:30" (end of the slot, wraps past midnight). */
 export const slotEndTime = (hm) => {
   const [h, m] = String(hm).slice(0, 5).split(":").map(Number);
@@ -38,7 +48,8 @@ export const slotIsLive = (start, now = new Date()) =>
 
 /**
  * Seats held by other open bookings whose window overlaps [start, start+60).
- * Returns Map(seatId → { reservation_id, user_id }).
+ * Returns Map(seatId → { reservation_id, user_id, ends_at }) — ends_at is
+ * when that booking's 60-minute hold ends (the seat is expected free).
  */
 export const getHeldSeats = async (hotelId, start, { excludeReservationId, transaction } = {}) => {
   const end = slotEnd(start);
@@ -55,7 +66,7 @@ export const getHeldSeats = async (hotelId, start, { excludeReservationId, trans
 
   const reservations = await Reservation.findAll({
     where,
-    attributes: ["id", "user_id", "seat_status"],
+    attributes: ["id", "user_id", "seat_status", "dining_date"],
     transaction,
   });
 
@@ -70,6 +81,7 @@ export const getHeldSeats = async (hotelId, start, { excludeReservationId, trans
         held.set(Number(seatId), {
           reservation_id: reservation.id,
           user_id: reservation.user_id,
+          ends_at: reservation.dining_date ? slotEnd(new Date(reservation.dining_date)) : null,
         });
       }
     }

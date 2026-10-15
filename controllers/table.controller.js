@@ -6,7 +6,7 @@ import Reservation from "../models/reservation.model.js";
 import { SEAT_STATUS } from "../utils/seatStatus.js";
 import { RESERVATION_STATUS } from "../utils/reservationStatus.js";
 import { assignMissingTableCodes } from "../utils/tableCode.js";
-import { getHeldSeats, parseSlot, slotIsLive } from "../utils/slotAvailability.js";
+import { getHeldSeats, parseSlot, slotEnd, slotIsLive } from "../utils/slotAvailability.js";
 /**
  * CREATE tables for a hotel (Admin)
  */
@@ -140,8 +140,15 @@ export const getTablesByHotel = async (req, res) => {
     /* ---------------- FETCH RESERVATIONS ---------------- */
     const reservations = await Reservation.findAll({
       where: { hotel_id: hotelTableId },
-      attributes: ["id", "user_id", "seat_status", "dining_status"],
+      attributes: ["id", "user_id", "seat_status", "dining_status", "dining_date"],
     });
+
+    // When each open booking's 60-minute hold ends (seat expected free).
+    const reservationEndsAt = new Map(
+      reservations
+        .filter((r) => r.dining_date)
+        .map((r) => [Number(r.id), slotEnd(new Date(r.dining_date))]),
+    );
 
     // Finished bookings (completed / cancelled) never hold a seat, even when an
     // older status change left the seat marked with them.
@@ -187,6 +194,7 @@ export const getTablesByHotel = async (req, res) => {
 
             let status = seat.status;
             let slotUserId = null;
+            let heldUntil = null;
             // Stale hold from a finished booking: the seat is free.
             if (seat.reservation_id && closedReservationIds.has(Number(seat.reservation_id))) {
               status = SEAT_STATUS.AVAILABLE;
@@ -196,6 +204,7 @@ export const getTablesByHotel = async (req, res) => {
               if (held) {
                 status = SEAT_STATUS.BOOKED;
                 slotUserId = held.user_id;
+                heldUntil = held.ends_at;
               } else if (!liveSlot || seat.status === SEAT_STATUS.BOOKED) {
                 // A future slot only depends on bookings; a "booked" live seat
                 // not held by an overlapping booking is free for this slot.
@@ -204,6 +213,11 @@ export const getTablesByHotel = async (req, res) => {
             }
 
             const isAvailable = status === SEAT_STATUS.AVAILABLE;
+            // Occupied (booked / seated / cleaning) by a live booking: when
+            // its hold ends, so guests see when the table should be free.
+            if (!isAvailable && !heldUntil && seat.reservation_id) {
+              heldUntil = reservationEndsAt.get(Number(seat.reservation_id)) || null;
+            }
 
             if (isAvailable) {
               availableSeats++;
@@ -215,6 +229,7 @@ export const getTablesByHotel = async (req, res) => {
               status,
               isActive: seat.isActive,
               reservation_id: seat.reservation_id,
+              held_until: isAvailable ? null : heldUntil,
               user_id:
                 status === SEAT_STATUS.BOOKED
                   ? slotUserId ?? seatUserMap.get(Number(seat.id)) ?? null

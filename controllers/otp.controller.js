@@ -4,7 +4,7 @@ import RefreshToken from "../models/refreshToken.model.js";
 import { sendOtpSms } from "../services/sms.service.js";
 
 export const verifyOtp = async (req, res) => {
-  const { mobilenumber, otp, loginAs } = req.body;
+  const { mobilenumber, otp } = req.body;
 
   if (!mobilenumber || !otp) {
     return res.status(400).json({
@@ -33,17 +33,9 @@ export const verifyOtp = async (req, res) => {
     });
   }
 
-  // 🎭 Role for this session comes from the login tab:
-  // "guest" → everyone is a User (Admins too); "restaurant" → Admins only.
-  const isAdminAccount = String(user.role || "").toLowerCase() === "admin";
-  if (loginAs === "restaurant" && !isAdminAccount) {
-    return res.status(403).json({
-      success: false,
-      message:
-        "This number is not registered as a restaurant account. Please sign in as Guest.",
-    });
-  }
-  const sessionRole = loginAs === "guest" && isAdminAccount ? "User" : user.role;
+  // 🎭 Session role is the account's own role — the client routes on it
+  // (Admin → restaurant dashboard, User → guest dashboard).
+  const sessionRole = user.role;
 
   // 🔐 Create JWT with role
   const accessToken = jwt.sign(

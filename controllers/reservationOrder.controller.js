@@ -14,6 +14,10 @@ import { ORDER_STATUS, CLOSED_ORDER_STATUSES } from "../utils/orderStatus.js";
 import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
 import { RESERVATION_STATUS, withStageEntry } from "../utils/reservationStatus.js";
 import RegisterUsersData from "../models/user.model.js";
+import { formatLocalTime } from "../utils/slotAvailability.js";
+
+// Table orders go to the kitchen (Preparing) from this long before the booking.
+const KITCHEN_LEAD_MINUTES = 15;
 
 /**
  * Who cancels an order, for the Cancelled card: "Admin" for a staff session,
@@ -516,7 +520,9 @@ export const getOrders = async (req, res) => {
     const reservationInclude = {
       model: Reservation,
       as: "reservation",
-      attributes: ["id", "user_id", "dining_status", "server_id", "floor_id"],
+      // dining_date: the booking time, shown on the order card and used for
+      // the "Preparing from 15 minutes before" rule.
+      attributes: ["id", "user_id", "dining_status", "server_id", "floor_id", "dining_date"],
       // The table's server: reused when its orders are served.
       include: [
         {
@@ -802,6 +808,31 @@ export const updateOrderStatus = async (req, res) => {
         message: "An order being prepared can only move to Ready or be cancelled.",
       });
     }
+    // Table orders: the kitchen may start (Preparing, and the stages after
+    // it) only from 15 minutes before the booking's dining time. Before that
+    // the order can stay Ordered / Accepted, or be cancelled.
+    const KITCHEN_STAGES = [ORDER_STATUS.PREPARING, ORDER_STATUS.READY, ORDER_STATUS.SERVED];
+    if (
+      order.reservation_id &&
+      KITCHEN_STAGES.includes(nextStatus) &&
+      !KITCHEN_STAGES.includes(order.order_status)
+    ) {
+      const booking = await Reservation.findByPk(order.reservation_id, {
+        attributes: ["id", "dining_date"],
+      });
+      const diningAt = booking?.dining_date ? new Date(booking.dining_date) : null;
+      const opensAt = diningAt ? new Date(diningAt.getTime() - KITCHEN_LEAD_MINUTES * 60000) : null;
+      if (opensAt && Date.now() < opensAt.getTime()) {
+        return res.status(400).json({
+          success: false,
+          code: "BOOKING_NOT_DUE",
+          kitchen_opens_at: opensAt,
+          dining_at: diningAt,
+          message: `Booking #${booking.id} is at ${formatLocalTime(diningAt)}. Its food can move to Preparing from ${formatLocalTime(opensAt)} (${KITCHEN_LEAD_MINUTES} minutes before).`,
+        });
+      }
+    }
+
     if (nextStatus === ORDER_STATUS.SERVED && !order.reservation_id) {
       return res.status(400).json({
         success: false,

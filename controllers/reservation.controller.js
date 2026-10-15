@@ -15,7 +15,8 @@ import Cleaner from "../models/cleaner.model.js";
 import { findAssignableStaff } from "../utils/staffController.js";
 import { attachTableCodes } from "../utils/reservationTables.js";
 import ReservationOrder from "../models/reservationOrder.model.js";
-import { CLOSED_ORDER_STATUSES } from "../utils/orderStatus.js";
+import { CLOSED_ORDER_STATUSES, ORDER_STATUS } from "../utils/orderStatus.js";
+import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
 import {
   getHeldSeats,
   parseSlot,
@@ -533,6 +534,7 @@ export const getDashboardSummary = async (req, res) => {
       [0, 1].includes(user.user_type_id) &&
       String(req.user.role || "").toLowerCase() === "admin";
     const reservationScope = isAdmin ? {} : { user_id: req.user.id };
+    const orderScope = isAdmin ? {} : { user_id: req.user.id };
 
     const params = req.method === "POST" ? req.body : req.query;
     const { start_date, end_date } = params || {};
@@ -557,7 +559,7 @@ export const getDashboardSummary = async (req, res) => {
     const aggregation = getAggregationType(durationDays);
     const trendPeriods = buildTrendPeriods(periodStart, periodEnd, aggregation);
 
-    const [hotels, tables, seats, periodReservations, recent] = await Promise.all([
+    const [hotels, tables, seats, periodReservations, recent, periodOrders, recentOrders] = await Promise.all([
       HotelTable.count(),
       Table.count({ where: { isActive: true } }),
       Seat.findAll({ where: { isActive: true }, attributes: ["status"] }),
@@ -575,7 +577,44 @@ export const getDashboardSummary = async (req, res) => {
           { model: HotelTable, as: "hotel", attributes: ["id", "hotel_name"], paranoid: false },
         ],
       }),
+      ReservationOrder.findAll({
+        where: { ...orderScope, ordered_at: { [Op.between]: [periodStart, periodEnd] } },
+        attributes: ["order_status", "payment_status", "total_amount"],
+      }),
+      ReservationOrder.findAll({
+        where: { ...orderScope, ordered_at: { [Op.between]: [periodStart, periodEnd] } },
+        limit: 6,
+        order: [["ordered_at", "DESC"]],
+        attributes: [
+          "id",
+          "order_number",
+          "reservation_id",
+          "order_status",
+          "payment_status",
+          "total_amount",
+          "ordered_at",
+        ],
+        include: [
+          { model: HotelTable, as: "hotel", attributes: ["id", "hotel_name"], paranoid: false },
+        ],
+      }),
     ]);
+
+    // Orders in the range: count per order_status, and money from the ones
+    // not cancelled (paid vs still to collect).
+    const orderAmount = (order) => Number(order.total_amount) || 0;
+    const liveOrders = periodOrders.filter(
+      (order) => order.order_status !== ORDER_STATUS.CANCELLED,
+    );
+    const unpaidOrders = liveOrders.filter(
+      (order) => order.payment_status === PAYMENT_STATUS.PENDING,
+    );
+    const ordersByStatus = periodOrders.reduce((counts, order) => {
+      counts[order.order_status] = (counts[order.order_status] || 0) + 1;
+      return counts;
+    }, {});
+    const sumAmount = (orders) =>
+      Math.round(orders.reduce((sum, order) => sum + orderAmount(order), 0) * 100) / 100;
 
     const countStatus = (status) =>
       periodReservations.filter((reservation) => reservation.dining_status === status).length;
@@ -612,6 +651,17 @@ export const getDashboardSummary = async (req, res) => {
           points: trend,
         },
         recent: await attachTableCodes(recent),
+        orders: {
+          total: periodOrders.length,
+          revenue: sumAmount(liveOrders),
+          paidRevenue: sumAmount(
+            liveOrders.filter((order) => order.payment_status === PAYMENT_STATUS.PAID),
+          ),
+          unpaidCount: unpaidOrders.length,
+          unpaidAmount: sumAmount(unpaidOrders),
+          byStatus: ordersByStatus,
+          recent: recentOrders,
+        },
       },
     });
   } catch (error) {
@@ -899,6 +949,7 @@ console.log('seatStatusToUpdate',seatStatusToUpdate);
     reservationUpdate.status_history = withStageEntry(reservation, dining_status);
 
     /* ---------------- UPDATE RESERVATION ---------------- */
+    const previousStatus = Number(reservation.dining_status);
     await reservation.update(reservationUpdate, { transaction });
 
     /* ---------------- UPDATE SEATS ---------------- */
@@ -919,6 +970,36 @@ console.log('seatStatusToUpdate',seatStatusToUpdate);
       transaction,
     });
 
+    /* ---------- SERVING: the table's Ready food is served ---------- */
+    // Moving the booking to Serving means its food reached the table: every
+    // order waiting at the pass (Ready) becomes Served — same stamps as
+    // serving it on the Orders board; the table's server serves it when the
+    // order has none of its own.
+    let servedOrders = [];
+    if (
+      Number(dining_status) === RESERVATION_STATUS.SERVING &&
+      previousStatus !== RESERVATION_STATUS.SERVING
+    ) {
+      const readyOrders = await ReservationOrder.findAll({
+        where: { reservation_id: reservation.id, order_status: ORDER_STATUS.READY },
+        attributes: ["id", "order_number", "server_id", "served_at", "completed_at"],
+        transaction,
+      });
+      const now = new Date();
+      for (const order of readyOrders) {
+        await order.update(
+          {
+            order_status: ORDER_STATUS.SERVED,
+            served_at: order.served_at || now,
+            completed_at: order.completed_at || now,
+            server_id: order.server_id || reservation.server_id || null,
+          },
+          { transaction },
+        );
+      }
+      servedOrders = readyOrders.map((order) => order.order_number);
+    }
+
     await transaction.commit();
 
     return res.status(200).json({
@@ -927,6 +1008,8 @@ console.log('seatStatusToUpdate',seatStatusToUpdate);
       data: {
         reservationId,
         dining_status,
+        // Ready orders this served (moving to Serving).
+        served_orders: servedOrders,
       },
     });
   } catch (error) {

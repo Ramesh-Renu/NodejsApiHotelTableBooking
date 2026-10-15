@@ -80,19 +80,19 @@ SELECT 'reservations missing customer_name column' AS "check", COUNT(*) AS "coun
   FROM (SELECT 1) x
   WHERE NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'reservations' AND column_name = 'customer_name'
+    WHERE table_schema = 'public' AND table_name = 'reservations' AND column_name = 'customer_name'
   )
 UNION ALL
 SELECT 'reservations missing customer_mobile column', COUNT(*)
   FROM (SELECT 1) x
   WHERE NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'reservations' AND column_name = 'customer_mobile'
+    WHERE table_schema = 'public' AND table_name = 'reservations' AND column_name = 'customer_mobile'
   )
 UNION ALL
 SELECT 'reservation_orders missing cancellation columns', 4 - COUNT(*)
   FROM information_schema.columns
-  WHERE table_name = 'reservation_orders'
+  WHERE table_schema = 'public' AND table_name = 'reservation_orders'
     AND column_name IN ('cancelled_at', 'cancelled_by', 'cancelled_by_name', 'cancel_reason')
 UNION ALL
 SELECT 'reservations without stage history', COUNT(*)
