@@ -33,6 +33,13 @@ export const verifyOtp = async (req, res) => {
     });
   }
 
+  if (user.is_active === false) {
+    return res.status(403).json({
+      success: false,
+      message: "This account is disabled. Contact your administrator.",
+    });
+  }
+
   // 🎭 Session role is the account's own role — the client routes on it
   // (Admin → restaurant dashboard, User → guest dashboard).
   const sessionRole = user.role;

@@ -21,6 +21,8 @@ export const STAFF_PERSONAL_FIELDS = {
   location_id: { type: DataTypes.INTEGER, allowNull: true },
   area_id: { type: DataTypes.INTEGER, allowNull: true },
   floor_id: { type: DataTypes.INTEGER, allowNull: true },
+  // Their Staff user (registerUsersData) for signing in; see utils/staffAccount.js.
+  user_id: { type: DataTypes.INTEGER, allowNull: true },
 };
 
 export const STAFF_PERSONAL_FIELD_NAMES = Object.keys(STAFF_PERSONAL_FIELDS);

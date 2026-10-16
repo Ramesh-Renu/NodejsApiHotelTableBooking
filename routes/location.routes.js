@@ -1,6 +1,6 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 import {
   createLocation,
   getAllLocations,
@@ -43,7 +43,7 @@ const router = express.Router();
  *       201:
  *         description: Location created
  */
-router.post("/", authenticate, authorizeRoles("Admin"), createLocation);
+router.post("/", authenticate, authorizePermission("locations", "create"), createLocation);
 
 /**
  * @swagger
@@ -69,7 +69,7 @@ router.get("/", getAllLocations);
  *       200:
  *         description: Assignment results
  */
-router.post("/assign", authenticate, authorizeRoles("Admin"), bulkAssignLocations);
+router.post("/assign", authenticate, authorizePermission("locations", "edit"), bulkAssignLocations);
 
 /**
  * @swagger
@@ -102,7 +102,7 @@ router.post("/assign", authenticate, authorizeRoles("Admin"), bulkAssignLocation
  *       200: { description: Location deleted }
  *       409: { description: Areas or hotels still use it }
  */
-router.put("/:id", authenticate, authorizeRoles("Admin"), updateLocation);
-router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteLocation);
+router.put("/:id", authenticate, authorizePermission("locations", "edit"), updateLocation);
+router.delete("/:id", authenticate, authorizePermission("locations", "delete"), deleteLocation);
 
 export default router;

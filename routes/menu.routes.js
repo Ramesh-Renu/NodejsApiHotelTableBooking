@@ -11,6 +11,7 @@ import {
 } from "../controllers/menu.controller.js";
 import upload from "../middlewares/upload.middleware.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -73,7 +74,7 @@ const router = express.Router();
  *       201:
  *         description: Menu created successfully
  */
-router.post("/", authenticate, upload.single("image"), createMenu);
+router.post("/", authenticate, authorizePermission("menu", "create"), upload.single("image"), createMenu);
 
 /**
  * @swagger
@@ -158,7 +159,7 @@ router.get("/:id", authenticate, getMenuById);
  *       200:
  *         description: Menu updated
  */
-router.put("/:id", authenticate, updateMenu);
+router.put("/:id", authenticate, authorizePermission("menu", "edit"), updateMenu);
 
 /**
  * @swagger
@@ -178,7 +179,7 @@ router.put("/:id", authenticate, updateMenu);
  *       200:
  *         description: Menu deleted
  */
-router.delete("/:id", authenticate, deleteMenu);
+router.delete("/:id", authenticate, authorizePermission("menu", "delete"), deleteMenu);
 
 /**
  * @swagger
@@ -201,6 +202,7 @@ router.delete("/:id", authenticate, deleteMenu);
 router.patch(
   "/:id/availability",
   authenticate,
+  authorizePermission("menu", "edit"),
   updateMenuAvailability
 );
 

@@ -7,7 +7,7 @@ import {
   updateServer,
 } from "../controllers/server.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -54,7 +54,7 @@ const router = express.Router();
  *               is_active: { type: boolean }
  */
 router.get("/", authenticate, getServers);
-router.post("/", authenticate, authorizeRoles("Admin"), createServer);
+router.post("/", authenticate, authorizePermission("servers", "create"), createServer);
 
 /**
  * @swagger
@@ -70,7 +70,7 @@ router.post("/", authenticate, authorizeRoles("Admin"), createServer);
  *     tags: [Servers]
  */
 router.get("/:id", authenticate, getServerById);
-router.put("/:id", authenticate, authorizeRoles("Admin"), updateServer);
-router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteServer);
+router.put("/:id", authenticate, authorizePermission("servers", "edit"), updateServer);
+router.delete("/:id", authenticate, authorizePermission("servers", "delete"), deleteServer);
 
 export default router;

@@ -7,6 +7,7 @@ import {
   deleteSideDish,
 } from "../controllers/sideDish.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -77,7 +78,7 @@ const router = express.Router();
  *       409:
  *         description: Side dish already exists
  */
-router.post("/", authenticate, createSideDish);
+router.post("/", authenticate, authorizePermission("menuCategories", "edit"), createSideDish);
 
 /**
  * @swagger
@@ -166,7 +167,7 @@ router.get("/:id", getSideDishById);
  *       404:
  *         description: Side dish not found
  */
-router.put("/:id", authenticate, updateSideDish);
+router.put("/:id", authenticate, authorizePermission("menuCategories", "edit"), updateSideDish);
 
 /**
  * @swagger
@@ -186,6 +187,6 @@ router.put("/:id", authenticate, updateSideDish);
  *       404:
  *         description: Side dish not found
  */
-router.delete("/:id", authenticate, deleteSideDish);
+router.delete("/:id", authenticate, authorizePermission("menuCategories", "edit"), deleteSideDish);
 
 export default router;

@@ -1,6 +1,6 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 import { createStatusMasterUpdate } from "../utils/statusMasterController.js";
 import DiningStatusMaster from "../models/diningStatusMaster.model.js";
 import {
@@ -74,7 +74,7 @@ const router = express.Router();
  *       500:
  *         description: Server error
  */
-router.post("/", authenticate, authorizeRoles("Admin"), createDiningStatus);
+router.post("/", authenticate, authorizePermission("diningStatus", "create"), createDiningStatus);
 
 /**
  * @swagger
@@ -117,7 +117,7 @@ router.get("/", getAllDiningStatuses);
 router.put(
   "/:id",
   authenticate,
-  authorizeRoles("Admin"),
+  authorizePermission("diningStatus", "edit"),
   createStatusMasterUpdate({ Model: DiningStatusMaster, label: "Dining status" }),
 );
 

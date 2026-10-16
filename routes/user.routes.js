@@ -2,6 +2,7 @@ import express from "express";
 import { registerUser } from "../controllers/user.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import RegisterUsersData from "../models/user.model.js";
+import { accessOf, isStaffRole, isSuperAdmin } from "../utils/permissions.js";
 
 const router = express.Router();
 
@@ -82,9 +83,17 @@ router.get("/profile", authenticate, async (req, res) => {
     }
 
     // The session role (from the token) wins: an Admin who signed in as Guest is a User.
+    const role = req.user.role ?? user.role;
+    const access = isStaffRole(role) ? accessOf({ ...user.toJSON(), role }) : null;
     res.json({
       message: "Protected profile",
-      user: { ...user.toJSON(), role: req.user.role ?? user.role },
+      user: {
+        ...user.toJSON(),
+        role,
+        // Effective access for the PWA (pages, options, hotels).
+        permissions: access?.permissions ?? null,
+        hotel_ids: access?.hotelIds ?? null,
+      },
     });
   } catch (error) {
     console.error("Profile error:", error);
@@ -126,6 +135,14 @@ router.put("/:id", authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, email, location } = req.body;
+
+    // Own profile only; a SuperAdmin may edit anyone.
+    if (Number(id) !== Number(req.user.id) && !isSuperAdmin(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only update your own profile",
+      });
+    }
 
     const user = await RegisterUsersData.findByPk(id);
 

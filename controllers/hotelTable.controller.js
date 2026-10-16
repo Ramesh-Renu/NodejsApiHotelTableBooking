@@ -19,6 +19,13 @@ import {
   assignMissingTableCodes,
   renameTableCodes,
 } from "../utils/tableCode.js";
+import RegisterUsersData from "../models/user.model.js";
+import { allowedHotelIds, canAccessHotel } from "../utils/permissions.js";
+
+const NO_HOTEL_ACCESS = {
+  success: false,
+  message: "You don't have access to this hotel",
+};
 
 /**
  * Validates an admin-entered table code prefix. Returns an error message, or
@@ -190,6 +197,15 @@ export const createHotelTable = async (req, res) => {
 
     await t.commit();
 
+    // An Admin limited to some hotels gets the hotel they just created.
+    const scopeIds = await allowedHotelIds(req);
+    if (scopeIds) {
+      await RegisterUsersData.update(
+        { hotel_ids: [...scopeIds, hotel.id] },
+        { where: { id: req.user.id } },
+      );
+    }
+
     return res.status(201).json({
       success: true,
       message: "Hotel created with floors, tables and seats",
@@ -266,6 +282,12 @@ export const getAllHotelTables = async (req, res) => {
       ];
     }
 
+    /* ---------------- admin's assigned hotels ---------------- */
+    const scopeIds = await allowedHotelIds(req);
+    if (scopeIds) {
+      hotelsWhere.id = { [Op.in]: scopeIds };
+    }
+
     /* ---------------- fetch hotels ---------------- */
     const hotels = await HotelTable.findAll({
       where: hotelsWhere,
@@ -322,6 +344,10 @@ export const getAllHotelTables = async (req, res) => {
 export const getHotelTableById = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!(await canAccessHotel(req, id))) {
+      return res.status(403).json(NO_HOTEL_ACCESS);
+    }
 
     const hotel = await HotelTable.findByPk(id);
 
@@ -383,6 +409,9 @@ export const getHotelTableById = async (req, res) => {
  * UPDATE hotel + sync floors, tables, seats
  */
 export const updateHotelTable = async (req, res) => {
+  if (!(await canAccessHotel(req, req.params.id))) {
+    return res.status(403).json(NO_HOTEL_ACCESS);
+  }
   const transaction = await sequelize.transaction();
 
   try {
@@ -603,6 +632,10 @@ export const updateHotelTable = async (req, res) => {
 export const deleteHotelTable = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!(await canAccessHotel(req, id))) {
+      return res.status(403).json(NO_HOTEL_ACCESS);
+    }
 
     const data = await HotelTable.findByPk(id);
 

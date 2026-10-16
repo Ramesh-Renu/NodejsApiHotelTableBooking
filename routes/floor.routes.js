@@ -6,6 +6,7 @@ import {
 } from "../controllers/floor.controller.js";
 
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -53,7 +54,7 @@ const router = express.Router();
  *       404:
  *         description: Hotel not found
  */
-router.post("/hotel/:hotelTableId", authenticate, createFloor);
+router.post("/hotel/:hotelTableId", authenticate, authorizePermission("hotels", "edit"), createFloor);
 
 /**
  * @swagger
@@ -97,6 +98,6 @@ router.get("/hotel/:hotelTableId", getFloorsByHotel);
  *       404:
  *         description: Floor not found
  */
-router.delete("/:floorId", authenticate, deleteFloor);
+router.delete("/:floorId", authenticate, authorizePermission("hotels", "edit"), deleteFloor);
 
 export default router;

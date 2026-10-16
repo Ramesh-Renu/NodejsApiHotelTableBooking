@@ -1,6 +1,6 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 import { createStatusMasterUpdate } from "../utils/statusMasterController.js";
 import PaymentStatusMaster from "../models/paymentStatusMaster.model.js";
 import {
@@ -59,7 +59,7 @@ router.get("/", getAllPaymentStatuses);
  *       201:
  *         description: Payment status created
  */
-router.post("/", authenticate, authorizeRoles("Admin"), createPaymentStatus);
+router.post("/", authenticate, authorizePermission("paymentStatus", "create"), createPaymentStatus);
 
 /**
  * @swagger
@@ -71,7 +71,7 @@ router.post("/", authenticate, authorizeRoles("Admin"), createPaymentStatus);
  *       200:
  *         description: Payment statuses seeded
  */
-router.post("/seed", authenticate, authorizeRoles("Admin"), seedPaymentStatuses);
+router.post("/seed", authenticate, authorizePermission("paymentStatus", "create"), seedPaymentStatuses);
 
 /**
  * @swagger
@@ -96,7 +96,7 @@ router.post("/seed", authenticate, authorizeRoles("Admin"), seedPaymentStatuses)
 router.put(
   "/:id",
   authenticate,
-  authorizeRoles("Admin"),
+  authorizePermission("paymentStatus", "edit"),
   createStatusMasterUpdate({ Model: PaymentStatusMaster, label: "Payment status" }),
 );
 

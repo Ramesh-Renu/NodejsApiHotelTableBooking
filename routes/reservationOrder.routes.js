@@ -1,6 +1,6 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission, authorizeStaffPermission } from "../middlewares/role.middleware.js";
 
 import {
   createOrder,
@@ -92,22 +92,22 @@ const router = express.Router();
  *       500:
  *         description: Server error
  */
-router.post("/reservation/:reservationId", authenticate, createOrder);
+router.post("/reservation/:reservationId", authenticate, authorizeStaffPermission("orders", "create"), createOrder);
 // Order from the menu without a table booking (body: hotel_id, items).
-router.post("/", authenticate, createOrder);
+router.post("/", authenticate, authorizeStaffPermission("orders", "create"), createOrder);
 router.get("/reservation/:reservationId", authenticate, getReservationOrders);
 router.get("/", authenticate, getOrders);
 router.get("/:id", authenticate, getOrderById);
-router.put("/:id", authenticate, updateOrder);
-router.patch("/:id/status", authenticate, updateOrderStatus);
-router.put("/:id/items", authenticate, authorizeRoles("Admin"), updateOrderItems);
+router.put("/:id", authenticate, authorizeStaffPermission("orders", "edit"), updateOrder);
+router.patch("/:id/status", authenticate, authorizeStaffPermission("orders", "edit"), updateOrderStatus);
+router.put("/:id/items", authenticate, authorizePermission("orders", "edit"), updateOrderItems);
 router.patch(
   "/:id/items/:itemId/status",
   authenticate,
-  authorizeRoles("Admin"),
+  authorizePermission("orders", "edit"),
   updateOrderItemStatus,
 );
-router.patch("/:id/payment", authenticate, updatePaymentStatus);
-router.patch("/:id/cancel", authenticate, cancelOrder);
+router.patch("/:id/payment", authenticate, authorizeStaffPermission("orders", "edit"), updatePaymentStatus);
+router.patch("/:id/cancel", authenticate, authorizeStaffPermission("orders", "delete"), cancelOrder);
 
 export default router;

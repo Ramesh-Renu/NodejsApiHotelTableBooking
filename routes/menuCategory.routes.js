@@ -7,6 +7,7 @@ import {
   deleteMenuCategory,
 } from "../controllers/menuCategory.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -47,7 +48,7 @@ const router = express.Router();
  *       201:
  *         description: Menu category created successfully
  */
-router.post("/", authenticate, createMenuCategory);
+router.post("/", authenticate, authorizePermission("menuCategories", "create"), createMenuCategory);
 
 /**
  * @swagger
@@ -115,7 +116,7 @@ router.get("/:id", getMenuCategoryById);
  *       200:
  *         description: Menu category updated successfully
  */
-router.put("/:id", authenticate, updateMenuCategory);
+router.put("/:id", authenticate, authorizePermission("menuCategories", "edit"), updateMenuCategory);
 
 /**
  * @swagger
@@ -134,6 +135,6 @@ router.put("/:id", authenticate, updateMenuCategory);
  *       200:
  *         description: Menu category deleted successfully
  */
-router.delete("/:id", authenticate, deleteMenuCategory);
+router.delete("/:id", authenticate, authorizePermission("menuCategories", "delete"), deleteMenuCategory);
 
 export default router;

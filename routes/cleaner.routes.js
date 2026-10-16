@@ -7,7 +7,7 @@ import {
   updateCleaner,
 } from "../controllers/cleaner.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -39,7 +39,7 @@ const router = express.Router();
  *     tags: [Cleaners]
  */
 router.get("/", authenticate, getCleaners);
-router.post("/", authenticate, authorizeRoles("Admin"), createCleaner);
+router.post("/", authenticate, authorizePermission("cleaners", "create"), createCleaner);
 
 /**
  * @swagger
@@ -55,7 +55,7 @@ router.post("/", authenticate, authorizeRoles("Admin"), createCleaner);
  *     tags: [Cleaners]
  */
 router.get("/:id", authenticate, getCleanerById);
-router.put("/:id", authenticate, authorizeRoles("Admin"), updateCleaner);
-router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteCleaner);
+router.put("/:id", authenticate, authorizePermission("cleaners", "edit"), updateCleaner);
+router.delete("/:id", authenticate, authorizePermission("cleaners", "delete"), deleteCleaner);
 
 export default router;

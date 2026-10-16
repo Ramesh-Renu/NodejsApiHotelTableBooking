@@ -30,16 +30,21 @@ import cleanerRoutes from "./routes/cleaner.routes.js";
 import menuSideDishRoutes from "./routes/menuSideDish.routes.js";
 import sideDishRoutes from "./routes/sideDish.routes.js";
 import pwaInstallRoutes from "./routes/pwaInstall.routes.js";
+import staffUserRoutes from "./routes/staffUser.routes.js";
 import "./models/index.js";
 import { backfillTableCodes } from "./utils/tableCode.js";
 import { backfillOrderOwners } from "./utils/orderOwner.js";
 import { migrateCompletedOrders } from "./utils/orderStatusMigration.js";
+import { ensureSuperAdmin } from "./controllers/adminUser.controller.js";
+import { backfillStaffAccounts } from "./utils/staffAccount.js";
 
 
 connectDB() // 👈 MUST BE HERE
   .then(backfillTableCodes)
   .then(backfillOrderOwners)
   .then(migrateCompletedOrders)
+  .then(ensureSuperAdmin)
+  .then(backfillStaffAccounts)
   .catch((error) => console.error("Table code backfill failed:", error));
 dotenv.config();
 
@@ -54,6 +59,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/staff-users", staffUserRoutes);
 app.use("/api/hotel", hotelTableRoutes);
 app.use("/api/floors", floorRoutes);
 app.use("/api/tables", tableRoutes);

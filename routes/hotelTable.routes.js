@@ -1,4 +1,5 @@
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 import express from "express";
 import { body, validationResult } from "express-validator";
 import {
@@ -67,6 +68,7 @@ const router = express.Router();
 router.post(
   "/",
   authenticate,
+  authorizePermission("hotels", "create"),
   [
     body("hotel_name").notEmpty(),
     body("location_id").isInt({ min: 1 }).withMessage("location_id is required and must be a positive integer"),
@@ -216,7 +218,7 @@ router.get("/:id", authenticate, getHotelTableById); // READ ONE
  *       500:
  *         description: Server error
  */
-router.put("/:id", authenticate, updateHotelTable); // UPDATE
+router.put("/:id", authenticate, authorizePermission("hotels", "edit"), updateHotelTable); // UPDATE
 
 
 /**
@@ -243,6 +245,6 @@ router.put("/:id", authenticate, updateHotelTable); // UPDATE
  *         description: Unauthorized
  */
 
-router.delete("/:id", authenticate, deleteHotelTable); // DELETE
+router.delete("/:id", authenticate, authorizePermission("hotels", "delete"), deleteHotelTable); // DELETE
 
 export default router;

@@ -1,6 +1,6 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 import {
   createSpiceLevel,
   getSpiceLevels,
@@ -46,7 +46,7 @@ const router = express.Router();
  *       201:
  *         description: Spice level created successfully
  */
-router.post("/", authenticate, authorizeRoles("Admin"), createSpiceLevel);
+router.post("/", authenticate, authorizePermission("spiceLevels", "create"), createSpiceLevel);
 
 /**
  * @swagger
@@ -83,7 +83,7 @@ router.get("/", getSpiceLevels);
  *       200:
  *         description: Spice levels seeded successfully
  */
-router.post("/seed", authenticate, authorizeRoles("Admin"), seedSpiceLevels);
+router.post("/seed", authenticate, authorizePermission("spiceLevels", "create"), seedSpiceLevels);
 
 /**
  * @swagger
@@ -117,7 +117,7 @@ router.get("/:id", getSpiceLevelById);
  *       200:
  *         description: Spice level updated successfully
  */
-router.put("/:id", authenticate, authorizeRoles("Admin"), updateSpiceLevel);
+router.put("/:id", authenticate, authorizePermission("spiceLevels", "edit"), updateSpiceLevel);
 
 /**
  * @swagger
@@ -134,6 +134,6 @@ router.put("/:id", authenticate, authorizeRoles("Admin"), updateSpiceLevel);
  *       200:
  *         description: Spice level deleted successfully
  */
-router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteSpiceLevel);
+router.delete("/:id", authenticate, authorizePermission("spiceLevels", "delete"), deleteSpiceLevel);
 
 export default router;

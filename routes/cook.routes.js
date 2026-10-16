@@ -7,7 +7,7 @@ import {
   updateCook,
 } from "../controllers/cook.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -54,7 +54,7 @@ const router = express.Router();
  *               is_active: { type: boolean }
  */
 router.get("/", authenticate, getCooks);
-router.post("/", authenticate, authorizeRoles("Admin"), createCook);
+router.post("/", authenticate, authorizePermission("cooks", "create"), createCook);
 
 /**
  * @swagger
@@ -70,7 +70,7 @@ router.post("/", authenticate, authorizeRoles("Admin"), createCook);
  *     tags: [Cooks]
  */
 router.get("/:id", authenticate, getCookById);
-router.put("/:id", authenticate, authorizeRoles("Admin"), updateCook);
-router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteCook);
+router.put("/:id", authenticate, authorizePermission("cooks", "edit"), updateCook);
+router.delete("/:id", authenticate, authorizePermission("cooks", "delete"), deleteCook);
 
 export default router;

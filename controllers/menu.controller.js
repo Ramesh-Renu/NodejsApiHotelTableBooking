@@ -302,7 +302,7 @@ export const getMenus = async (req, res) => {
         {
           model: HotelTable,
           as: "hotel",
-          attributes: ["id", "hotel_name"],
+          attributes: ["id", "hotel_name", "address", "location_id", "area_id"],
           // Only dishes of existing hotels: a deleted hotel's dishes can't be ordered.
           required: true,
         },

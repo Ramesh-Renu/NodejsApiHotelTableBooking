@@ -7,6 +7,7 @@ import {
   removeSeatsFromTable,
 } from "../controllers/seat.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -80,7 +81,7 @@ const router = express.Router();
  *       201:
  *         description: Seats created successfully
  */
-router.post("/multiple/table/:tableId", authenticate, createSeatsForTable);
+router.post("/multiple/table/:tableId", authenticate, authorizePermission("hotels", "edit"), createSeatsForTable);
 
 /**
  * @swagger
@@ -114,7 +115,7 @@ router.post("/multiple/table/:tableId", authenticate, createSeatsForTable);
  *       201:
  *         description: Seats added successfully
  */
-router.post("/table/:tableId/add", authenticate, addSeatsToTable);
+router.post("/table/:tableId/add", authenticate, authorizePermission("hotels", "edit"), addSeatsToTable);
 
 /**
  * @swagger
@@ -154,7 +155,7 @@ router.post("/table/:tableId/add", authenticate, addSeatsToTable);
  *       500:
  *         description: Server error
  */
-router.delete("/table/:tableId/remove", authenticate, removeSeatsFromTable);
+router.delete("/table/:tableId/remove", authenticate, authorizePermission("hotels", "edit"), removeSeatsFromTable);
 
 /**
  * @swagger

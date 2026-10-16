@@ -7,6 +7,8 @@ import Menu from "../models/menu.model.js";
 import { Op } from "sequelize";
 
 import HotelTable from "../models/hotelTable.model.js";
+import Location from "../models/location.model.js";
+import Area from "../models/area.model.js";
 import Cook from "../models/cook.model.js";
 import Server from "../models/server.model.js";
 import { findAssignableStaff } from "../utils/staffController.js";
@@ -15,6 +17,7 @@ import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
 import { RESERVATION_STATUS, withStageEntry } from "../utils/reservationStatus.js";
 import RegisterUsersData from "../models/user.model.js";
 import { formatLocalTime } from "../utils/slotAvailability.js";
+import { allowedHotelIds, isStaffRole } from "../utils/permissions.js";
 
 // Table orders go to the kitchen (Preparing) from this long before the booking.
 const KITCHEN_LEAD_MINUTES = 15;
@@ -24,7 +27,7 @@ const KITCHEN_LEAD_MINUTES = 15;
  * else the customer's name (kept on the order, so later renames don't change it).
  */
 const cancellationStamp = async (req, transaction) => {
-  const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+  const isAdmin = isStaffRole(req.user?.role);
   let name = "Admin";
   if (!isAdmin) {
     const user = req.user?.id
@@ -132,7 +135,7 @@ export const createOrder = async (req, res) => {
       return res.status(404).json({ success: false, message: "Hotel not found." });
     }
 
-    const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+    const isAdmin = isStaffRole(req.user?.role);
     let reservation = null;
 
     if (hasReservation) {
@@ -515,7 +518,7 @@ export const getOrders = async (req, res) => {
       ];
     }
 
-    const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+    const isAdmin = isStaffRole(req.user?.role);
 
     const reservationInclude = {
       model: Reservation,
@@ -537,6 +540,14 @@ export const getOrders = async (req, res) => {
     if (!isAdmin) {
       // Customers see their own orders, with or without a booking.
       where.user_id = req.user.id;
+    } else {
+      // Staff see their assigned hotels' orders.
+      const scopeIds = await allowedHotelIds(req);
+      if (scopeIds) {
+        where.hotel_id = hotel_id && scopeIds.includes(Number(hotel_id))
+          ? hotel_id
+          : { [Op.in]: hotel_id ? [] : scopeIds };
+      }
     }
     reservationInclude.required = false;
 
@@ -551,7 +562,12 @@ export const getOrders = async (req, res) => {
           as: "hotel",
           // Keep showing the name of a since-deleted (soft) hotel in history.
           paranoid: false,
-          attributes: ["id", "hotel_name"],
+          // Address + location / area: shown on the customer's order ticket.
+          attributes: ["id", "hotel_name", "address"],
+          include: [
+            { model: Location, as: "location", attributes: ["id", "name"], required: false },
+            { model: Area, as: "area", attributes: ["id", "name"], required: false },
+          ],
         },
 
         {
@@ -1150,7 +1166,7 @@ export const cancelOrder = async (req, res) => {
     }
 
     // Customers cancel only their own order, before the kitchen accepts it.
-    const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+    const isAdmin = isStaffRole(req.user?.role);
     if (!isAdmin) {
       if (Number(order.user_id) !== Number(req.user?.id)) {
         await transaction.rollback();

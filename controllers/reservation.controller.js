@@ -14,6 +14,7 @@ import Server from "../models/server.model.js";
 import Cleaner from "../models/cleaner.model.js";
 import { findAssignableStaff } from "../utils/staffController.js";
 import { attachTableCodes } from "../utils/reservationTables.js";
+import { STAFF_USER_TYPES, allowedHotelIds, isStaffRole } from "../utils/permissions.js";
 import ReservationOrder from "../models/reservationOrder.model.js";
 import { CLOSED_ORDER_STATUSES, ORDER_STATUS } from "../utils/orderStatus.js";
 import { PAYMENT_STATUS } from "../utils/paymentStatus.js";
@@ -531,10 +532,12 @@ export const getDashboardSummary = async (req, res) => {
     }
     // Admins signed in as Guest carry a "User" session role.
     const isAdmin =
-      [0, 1].includes(user.user_type_id) &&
-      String(req.user.role || "").toLowerCase() === "admin";
-    const reservationScope = isAdmin ? {} : { user_id: req.user.id };
-    const orderScope = isAdmin ? {} : { user_id: req.user.id };
+      STAFF_USER_TYPES.includes(user.user_type_id) && isStaffRole(req.user.role);
+    // Staff see their assigned hotels (all when unrestricted).
+    const scopeIds = isAdmin ? await allowedHotelIds(req) : null;
+    const staffScope = scopeIds ? { hotel_id: { [Op.in]: scopeIds } } : {};
+    const reservationScope = isAdmin ? staffScope : { user_id: req.user.id };
+    const orderScope = isAdmin ? staffScope : { user_id: req.user.id };
 
     const params = req.method === "POST" ? req.body : req.query;
     const { start_date, end_date } = params || {};
@@ -560,9 +563,22 @@ export const getDashboardSummary = async (req, res) => {
     const trendPeriods = buildTrendPeriods(periodStart, periodEnd, aggregation);
 
     const [hotels, tables, seats, periodReservations, recent, periodOrders, recentOrders] = await Promise.all([
-      HotelTable.count(),
-      Table.count({ where: { isActive: true } }),
-      Seat.findAll({ where: { isActive: true }, attributes: ["status"] }),
+      HotelTable.count(scopeIds ? { where: { id: { [Op.in]: scopeIds } } } : undefined),
+      Table.count({
+        where: { isActive: true, ...(scopeIds && { hotel_table_id: { [Op.in]: scopeIds } }) },
+      }),
+      Seat.findAll({
+        where: { isActive: true },
+        attributes: ["status"],
+        ...(scopeIds && {
+          include: [{
+            model: Table,
+            as: "table",
+            attributes: [],
+            where: { hotel_table_id: { [Op.in]: scopeIds } },
+          }],
+        }),
+      }),
       Reservation.findAll({
         where: { ...reservationScope, dining_date: { [Op.between]: [periodStart, periodEnd] } },
         attributes: ["id", "dining_date", "dining_status", "seat_status", "hotel_id"],
@@ -700,10 +716,12 @@ export const getReservations = async (req, res) => {
     // 👤 Normal users → only their data
     // Admins signed in as Guest carry a "User" session role.
     const isAdminSession =
-      [0, 1].includes(user_type_id) &&
-      String(req.user.role || "").toLowerCase() === "admin";
+      STAFF_USER_TYPES.includes(user_type_id) && isStaffRole(req.user.role);
     if (!isAdminSession) {
       whereCondition.user_id = loggedInUserId;
+    } else {
+      const scopeIds = await allowedHotelIds(req);
+      if (scopeIds) whereCondition.hotel_id = { [Op.in]: scopeIds };
     }
 
     // ---------------- FETCH RESERVATIONS ----------------

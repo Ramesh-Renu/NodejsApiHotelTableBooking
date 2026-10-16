@@ -9,11 +9,12 @@ import {
   getDashboardSummary
 } from "../controllers/reservation.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizeStaffPermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
-router.post("/dashboard/summary", authenticate, getDashboardSummary);
-router.get("/dashboard/summary", authenticate, getDashboardSummary);
+router.post("/dashboard/summary", authenticate, authorizeStaffPermission("dashboard", "view"), getDashboardSummary);
+router.get("/dashboard/summary", authenticate, authorizeStaffPermission("dashboard", "view"), getDashboardSummary);
 
 /**
  * @swagger
@@ -129,7 +130,7 @@ router.get("/dashboard/summary", authenticate, getDashboardSummary);
  *       500:
  *         description: Server error
  */
-router.post("/", authenticate, createReservation);
+router.post("/", authenticate, authorizeStaffPermission("reservations", "create"), createReservation);
 
 /**
  * @swagger
@@ -209,7 +210,7 @@ router.post("/", authenticate, createReservation);
  *       500:
  *         description: Server error
  */
-router.put("/:reservationId", authenticate, updateReservation);
+router.put("/:reservationId", authenticate, authorizeStaffPermission("reservations", "edit"), updateReservation);
 
 /**
  * @swagger
@@ -311,7 +312,7 @@ router.get("/hotel/:hotelId", getReservationsByHotel);
  *       500:
  *         description: Internal server error
  */
-router.get("/", authenticate, getReservations);
+router.get("/", authenticate, authorizeStaffPermission("reservations", "view"), getReservations);
 
 /**
  * @swagger
@@ -394,6 +395,6 @@ router.delete("/:id/cancel", cancelReservationSeats);
  *       500:
  *         description: Server error
  */
-router.patch("/:reservationId/dining-status",authenticate, updateDiningStatus);
+router.patch("/:reservationId/dining-status", authenticate, authorizeStaffPermission("reservations", "edit"), updateDiningStatus);
 
 export default router;

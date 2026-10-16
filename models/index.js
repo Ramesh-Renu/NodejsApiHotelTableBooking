@@ -18,6 +18,8 @@ import MenuSideDishMapping from "./menuSideDishMapping.model.js";
 import SideDish from "./sideDish.model.js";
 import RegisterUsersData from "./user.model.js";
 import PwaInstall from "./pwaInstall.model.js";
+import Location from "./location.model.js";
+import Area from "./area.model.js";
 
 /* ==========================================================
    HOTEL ↔ FLOORS
@@ -29,6 +31,21 @@ HotelTable.hasMany(Floor, {
 Floor.belongsTo(HotelTable, {
   foreignKey: "hotel_table_id",
   as: "hotel",
+});
+
+/* ==========================================================
+   HOTEL → LOCATION / AREA (names for order tickets etc.)
+   No DB constraints: location_id / area_id are checked in code.
+   ========================================================== */
+HotelTable.belongsTo(Location, {
+  foreignKey: "location_id",
+  as: "location",
+  constraints: false,
+});
+HotelTable.belongsTo(Area, {
+  foreignKey: "area_id",
+  as: "area",
+  constraints: false,
 });
 
 /* ==========================================================

@@ -6,7 +6,7 @@ import {
   deleteArea,
 } from "../controllers/area.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -51,7 +51,7 @@ const router = express.Router();
  *         description: Area already exists
  */
 // Create area (admin)
-router.post("/", authenticate, authorizeRoles("Admin"), createArea);
+router.post("/", authenticate, authorizePermission("areas", "create"), createArea);
 
 /**
  * @swagger
@@ -123,7 +123,7 @@ router.get("/", getAllAreas);
  *       200: { description: Area deleted }
  *       409: { description: Hotels still use this area }
  */
-router.put("/:id", authenticate, authorizeRoles("Admin"), updateArea);
-router.delete("/:id", authenticate, authorizeRoles("Admin"), deleteArea);
+router.put("/:id", authenticate, authorizePermission("areas", "edit"), updateArea);
+router.delete("/:id", authenticate, authorizePermission("areas", "delete"), deleteArea);
 
 export default router;

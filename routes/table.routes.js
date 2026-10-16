@@ -6,7 +6,7 @@ import {
   deleteTable,
 } from "../controllers/table.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
@@ -72,7 +72,7 @@ router
   .route("/hotel/:hotelTableId/:floorId")
   .post(
     authenticate,
-    authorizeRoles("Admin"),
+    authorizePermission("hotels", "edit"),
     [
       param("hotelTableId")
         .isInt()
@@ -147,7 +147,7 @@ router.get(
 router.delete(
   "/:tableId",
   authenticate,
-  authorizeRoles("Admin"),
+  authorizePermission("hotels", "edit"),
   [param("tableId").isInt().withMessage("tableId must be an integer")],
   validate,
   deleteTable

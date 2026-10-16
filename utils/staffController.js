@@ -2,6 +2,17 @@ import { Op } from "sequelize";
 import HotelTable from "../models/hotelTable.model.js";
 import Floor from "../models/floor.model.js";
 import Area from "../models/area.model.js";
+import {
+  accessRemovedAttribute,
+  isAccessRemoved,
+  isUnassignable,
+  linkStaffAccount,
+  linkedAccountHotelIds,
+  linkedUsersForHotel,
+  releaseStaffAccount,
+  syncStaffAccount,
+  unassignableUsers,
+} from "./staffAccount.js";
 
 /**
  * CRUD handlers for kitchen / floor staff master data (cooks, servers).
@@ -22,6 +33,7 @@ export const createStaffController = ({
   label,
 }) => {
   const lower = label.toLowerCase();
+  const accountOptions = { label, nameField };
   const hotelInclude = {
     model: HotelTable,
     as: "hotel",
@@ -147,6 +159,9 @@ export const createStaffController = ({
    * With hotel_id: only staff relevant to that hotel — assigned to it, or
    * working at all hotels with no location / area limit that rules it out.
    * With floor_id too: staff on that floor or with no floor set.
+   * Also staff whose Staff user (login) has that hotel — the hotels can be
+   * changed in Settings → Staff users, including more than one.
+   * With hotel_id (a pick list), Managers are left out: they supervise.
    */
   const list = async (req, res) => {
     try {
@@ -166,11 +181,19 @@ export const createStaffController = ({
         if (hotel?.area_id) {
           allHotels.area_id = { [Op.or]: [null, hotel.area_id] };
         }
-        and.push({ [Op.or]: [{ hotel_id: Number(hotel_id) }, allHotels] });
-
+        const atHotel = [{ [Op.or]: [{ hotel_id: Number(hotel_id) }, allHotels] }];
         if (floor_id) {
-          and.push({ floor_id: { [Op.or]: [null, Number(floor_id)] } });
+          atHotel.push({ floor_id: { [Op.or]: [null, Number(floor_id)] } });
         }
+        const linkedUsers = linkedUsersForHotel(hotel_id);
+        and.push(
+          linkedUsers
+            ? { [Op.or]: [{ [Op.and]: atHotel }, { user_id: { [Op.in]: linkedUsers } }] }
+            : { [Op.and]: atHotel },
+        );
+        and.push({
+          [Op.or]: [{ user_id: null }, { user_id: { [Op.notIn]: unassignableUsers() } }],
+        });
       }
       if (and.length) where[Op.and] = and;
 
@@ -193,6 +216,8 @@ export const createStaffController = ({
 
       const rows = await Model.findAll({
         where,
+        // access_removed: their login is in User Management → Inactive users.
+        attributes: { include: [accessRemovedAttribute(Model)] },
         include: [hotelInclude],
         order: [[nameField, "ASC"]],
       });
@@ -205,7 +230,10 @@ export const createStaffController = ({
 
   const get = async (req, res) => {
     try {
-      const row = await Model.findByPk(req.params.id, { include: [hotelInclude] });
+      const row = await Model.findByPk(req.params.id, {
+        attributes: { include: [accessRemovedAttribute(Model)] },
+        include: [hotelInclude],
+      });
       if (!row) {
         return res.status(404).json({ success: false, message: `${label} not found.` });
       }
@@ -246,9 +274,12 @@ export const createStaffController = ({
         is_active: parseBoolean(req.body.is_active) ?? true,
       });
 
+      // Their Staff user (sign-in), when the phone is a 10-digit mobile.
+      const accountNote = await linkStaffAccount(row, accountOptions, req);
+
       return res.status(201).json({
         success: true,
-        message: `${label} added successfully.`,
+        message: `${label} added successfully. ${accountNote}`,
         data: row,
       });
     } catch (error) {
@@ -288,6 +319,13 @@ export const createStaffController = ({
           });
         }
         updates.is_active = active;
+        // A removed login is brought back from Inactive users, not here.
+        if (active && !row.is_active && (await isAccessRemoved(row))) {
+          return res.status(409).json({
+            success: false,
+            message: `${row[nameField]}'s access was removed. Retrieve them in User Management → Inactive users to activate.`,
+          });
+        }
       }
 
       const hotel = await parseHotelId(req.body.hotel_id);
@@ -310,10 +348,12 @@ export const createStaffController = ({
         return res.status(400).json({ success: false, message: placeError });
       }
 
+      const before = { phone: row.phone, hotel_id: row.hotel_id };
       await row.update(updates);
+      const accountNote = await syncStaffAccount(row, accountOptions, req, before);
       return res.json({
         success: true,
-        message: `${label} updated successfully.`,
+        message: `${label} updated successfully.${accountNote ? ` ${accountNote}` : ""}`,
         data: row,
       });
     } catch (error) {
@@ -341,6 +381,7 @@ export const createStaffController = ({
         }
       }
 
+      await releaseStaffAccount(row, req.user?.id ?? null);
       await row.destroy();
       return res.json({ success: true, message: `${label} deleted successfully.` });
     } catch (error) {
@@ -360,6 +401,14 @@ export const findAssignableStaff = async (Model, id, hotelId, { nameField, label
   const staff = await Model.findByPk(id);
   if (!staff || !staff.is_active) {
     return { error: `Select an active ${label}.` };
+  }
+  if (await isUnassignable(staff)) {
+    return { error: `${staff[nameField]} is a Manager and can't be assigned as a ${label}.` };
+  }
+  // Their Staff user's hotels (Settings → Staff users) count too.
+  const accountHotels = await linkedAccountHotelIds(staff);
+  if (accountHotels === null || accountHotels?.includes(Number(hotelId))) {
+    return { staff };
   }
   if (staff.hotel_id && Number(staff.hotel_id) !== Number(hotelId)) {
     return { error: `${staff[nameField]} does not work at this hotel.` };

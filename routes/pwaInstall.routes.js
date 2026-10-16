@@ -1,6 +1,6 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 import {
   reportInstall,
   getInstallSummary,
@@ -53,6 +53,6 @@ router.post("/installs", authenticate, reportInstall);
  *       200:
  *         description: "{ users, devices, last_7_days, by_platform }"
  */
-router.get("/installs/summary", authenticate, authorizeRoles("Admin"), getInstallSummary);
+router.get("/installs/summary", authenticate, authorizePermission("dashboard", "view"), getInstallSummary);
 
 export default router;

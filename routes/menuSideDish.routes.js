@@ -1,5 +1,6 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizePermission } from "../middlewares/role.middleware.js";
 import {
   createSideDish,
   getAllSideDishes,
@@ -56,7 +57,7 @@ const router = express.Router();
  *       500:
  *         description: Internal Server Error
  */
-router.post("/", authenticate, createSideDish);
+router.post("/", authenticate, authorizePermission("menuCategories", "edit"), createSideDish);
 
 /**
  * @swagger
@@ -141,7 +142,7 @@ router.get("/:id", getSideDishById);
  *       500:
  *         description: Internal Server Error
  */
-router.put("/:id", authenticate, updateSideDish);
+router.put("/:id", authenticate, authorizePermission("menuCategories", "edit"), updateSideDish);
 
 /**
  * @swagger
@@ -166,5 +167,5 @@ router.put("/:id", authenticate, updateSideDish);
  *       500:
  *         description: Internal Server Error
  */
-router.delete("/:id", authenticate, deleteSideDish);
+router.delete("/:id", authenticate, authorizePermission("menuCategories", "edit"), deleteSideDish);
 export default router;
