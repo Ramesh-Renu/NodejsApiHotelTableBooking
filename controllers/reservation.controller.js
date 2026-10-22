@@ -879,8 +879,8 @@ export const updateDiningStatus = async (req, res) => {
       [RESERVATION_STATUS.CLEANING]: SEAT_STATUS.CLEANING, // 6 → 3
       [RESERVATION_STATUS.SERVING]: SEAT_STATUS.SEATED, // 7 → 5
     };
-    // Seated / Serving only once the booking time has come (15 min grace).
-    const EARLY_ARRIVAL_MS = 15 * 60 * 1000;
+    // Seated / Serving only once the booking time has come (30 min grace).
+    const EARLY_ARRIVAL_MS = 30 * 60 * 1000;
     if (
       [RESERVATION_STATUS.SEATED, RESERVATION_STATUS.SERVING].includes(Number(dining_status)) &&
       reservation.dining_date &&
@@ -889,7 +889,7 @@ export const updateDiningStatus = async (req, res) => {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: "This booking isn't due yet. Guests can be seated from 15 minutes before the booked time.",
+        message: "This booking isn't due yet. Guests can be seated from 30 minutes before the booked time.",
       });
     }
 

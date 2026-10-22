@@ -20,7 +20,7 @@ import { formatLocalTime } from "../utils/slotAvailability.js";
 import { allowedHotelIds, isStaffRole } from "../utils/permissions.js";
 
 // Table orders go to the kitchen (Preparing) from this long before the booking.
-const KITCHEN_LEAD_MINUTES = 15;
+const KITCHEN_LEAD_MINUTES = 30;
 
 /**
  * Who cancels an order, for the Cancelled card: "Admin" for a staff session,
@@ -524,7 +524,7 @@ export const getOrders = async (req, res) => {
       model: Reservation,
       as: "reservation",
       // dining_date: the booking time, shown on the order card and used for
-      // the "Preparing from 15 minutes before" rule.
+      // the "Preparing from 30 minutes before" rule.
       attributes: ["id", "user_id", "dining_status", "server_id", "floor_id", "dining_date"],
       // The table's server: reused when its orders are served.
       include: [
@@ -825,7 +825,7 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
     // Table orders: the kitchen may start (Preparing, and the stages after
-    // it) only from 15 minutes before the booking's dining time. Before that
+    // it) only from 30 minutes before the booking's dining time. Before that
     // the order can stay Ordered / Accepted, or be cancelled.
     const KITCHEN_STAGES = [ORDER_STATUS.PREPARING, ORDER_STATUS.READY, ORDER_STATUS.SERVED];
     if (
