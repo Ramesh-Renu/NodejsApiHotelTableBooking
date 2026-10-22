@@ -13,6 +13,7 @@ import {
   syncStaffAccount,
   unassignableUsers,
 } from "./staffAccount.js";
+import { allowedHotelIds } from "./permissions.js";
 
 /**
  * CRUD handlers for kitchen / floor staff master data (cooks, servers).
@@ -154,6 +155,14 @@ export const createStaffController = ({
     return hotel ? { value: hotel.id } : { error: "Hotel not found." };
   };
 
+  // A limited Admin may manage staff only for the hotels assigned to them.
+  // SuperAdmins and legacy/all-hotel Admins return null from allowedHotelIds.
+  const hasHotelAccess = async (req, hotelId) => {
+    const scopeIds = await allowedHotelIds(req);
+    if (scopeIds === null) return true;
+    return hotelId != null && scopeIds.includes(Number(hotelId));
+  };
+
   /**
    * GET ?hotel_id=&floor_id=&is_active=&search=
    * With hotel_id: only staff relevant to that hotel — assigned to it, or
@@ -168,6 +177,14 @@ export const createStaffController = ({
       const { hotel_id, floor_id, is_active, search } = req.query;
       const where = {};
       const and = [];
+
+      const scopeIds = await allowedHotelIds(req);
+      if (scopeIds !== null) {
+        if (!scopeIds.length) {
+          return res.json({ success: true, data: [] });
+        }
+        and.push({ hotel_id: { [Op.in]: scopeIds } });
+      }
 
       if (hotel_id) {
         const hotel = await HotelTable.findByPk(hotel_id, {
@@ -237,6 +254,9 @@ export const createStaffController = ({
       if (!row) {
         return res.status(404).json({ success: false, message: `${label} not found.` });
       }
+      if (!(await hasHotelAccess(req, row.hotel_id))) {
+        return res.status(403).json({ success: false, message: "You don't have access to this hotel." });
+      }
       return res.json({ success: true, data: row });
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });
@@ -253,6 +273,12 @@ export const createStaffController = ({
       const hotel = await parseHotelId(req.body.hotel_id);
       if (hotel.error) {
         return res.status(404).json({ success: false, message: hotel.error });
+      }
+      if (!(await hasHotelAccess(req, hotel.value))) {
+        return res.status(403).json({
+          success: false,
+          message: "Choose a hotel assigned to your account.",
+        });
       }
 
       const personal = readPersonalFields(req.body);
@@ -293,6 +319,9 @@ export const createStaffController = ({
       const row = await Model.findByPk(req.params.id);
       if (!row) {
         return res.status(404).json({ success: false, message: `${label} not found.` });
+      }
+      if (!(await hasHotelAccess(req, row.hotel_id))) {
+        return res.status(403).json({ success: false, message: "You don't have access to this hotel." });
       }
 
       const updates = {};
@@ -336,6 +365,12 @@ export const createStaffController = ({
 
       // A new hotel makes the old floor meaningless unless a new one is sent.
       const hotelId = updates.hotel_id !== undefined ? updates.hotel_id : row.hotel_id;
+      if (!(await hasHotelAccess(req, hotelId))) {
+        return res.status(403).json({
+          success: false,
+          message: "Choose a hotel assigned to your account.",
+        });
+      }
       if (
         updates.hotel_id !== undefined &&
         updates.hotel_id !== row.hotel_id &&
@@ -367,6 +402,9 @@ export const createStaffController = ({
       const row = await Model.findByPk(req.params.id);
       if (!row) {
         return res.status(404).json({ success: false, message: `${label} not found.` });
+      }
+      if (!(await hasHotelAccess(req, row.hotel_id))) {
+        return res.status(403).json({ success: false, message: "You don't have access to this hotel." });
       }
 
       // Keep history intact: staff who have been assigned anywhere are

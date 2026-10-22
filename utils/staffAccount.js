@@ -325,8 +325,7 @@ export const isUnassignable = async (row) => {
 /**
  * For the Staff users / Admin users tables: adds photo_url, location_name and
  * area_name to each user. They come from the person's cook / server /
- * cleaner record when there is one, else from their hotel when they have
- * exactly one.
+ * cleaner record when there is one, else from all hotels assigned to them.
  */
 export const withProfileDetails = async (users) => {
   const rows = users.map((user) => (user.toJSON ? user.toJSON() : user));
@@ -345,11 +344,14 @@ export const withProfileDetails = async (users) => {
   ).flat();
   const recordOf = new Map(records.map((record) => [Number(record.user_id), record]));
 
-  const singleHotel = (user) => {
-    const hotelIds = sanitizeHotelIds(user.hotel_ids);
-    return hotelIds?.length === 1 ? hotelIds[0] : null;
-  };
-  const hotelIds = [...new Set(rows.map(singleHotel).filter(Boolean))];
+  const hotelIdsOf = (user) => sanitizeHotelIds(user.hotel_ids);
+  const hotelIds = [
+    ...new Set(
+      rows
+        .flatMap((user) => hotelIdsOf(user) || [])
+        .filter(Boolean),
+    ),
+  ];
   const hotels = hotelIds.length
     ? await HotelTable.findAll({ where: { id: hotelIds }, attributes: ["id", "location_id", "area_id"] })
     : [];
@@ -357,17 +359,26 @@ export const withProfileDetails = async (users) => {
 
   const placeOf = (user) => {
     const record = recordOf.get(Number(user.id));
-    const hotel = hotelOf.get(singleHotel(user));
+    const userHotelIds = hotelIdsOf(user);
+    const assignedHotels = (userHotelIds || []).map((id) => hotelOf.get(id)).filter(Boolean);
+    const recordLocationIds = record?.location_id ? [record.location_id] : [];
+    const recordAreaIds = record?.area_id ? [record.area_id] : [];
     return {
       record,
-      location_id: record?.location_id ?? hotel?.location_id ?? null,
-      area_id: record?.area_id ?? hotel?.area_id ?? null,
+      allHotels: !record && userHotelIds === null,
+      noHotels: !record && Array.isArray(userHotelIds) && userHotelIds.length === 0,
+      locationIds: recordLocationIds.length
+        ? recordLocationIds
+        : assignedHotels.map((hotel) => hotel.location_id).filter(Boolean),
+      areaIds: recordAreaIds.length
+        ? recordAreaIds
+        : assignedHotels.map((hotel) => hotel.area_id).filter(Boolean),
     };
   };
   const places = rows.map(placeOf);
 
-  const locationIds = [...new Set(places.map((p) => p.location_id).filter(Boolean))];
-  const areaIds = [...new Set(places.map((p) => p.area_id).filter(Boolean))];
+  const locationIds = [...new Set(places.flatMap((p) => p.locationIds).filter(Boolean))];
+  const areaIds = [...new Set(places.flatMap((p) => p.areaIds).filter(Boolean))];
   const [locations, areas] = await Promise.all([
     locationIds.length ? Location.findAll({ where: { id: locationIds }, attributes: ["id", "name"] }) : [],
     areaIds.length ? Area.findAll({ where: { id: areaIds }, attributes: ["id", "name"] }) : [],
@@ -377,7 +388,15 @@ export const withProfileDetails = async (users) => {
   return rows.map((user, index) => ({
     ...user,
     photo_url: places[index].record?.photo_url ?? null,
-    location_name: nameIn(locations, places[index].location_id),
-    area_name: nameIn(areas, places[index].area_id),
+    location_name: places[index].allHotels
+      ? "All locations"
+      : places[index].noHotels
+        ? "No hotels"
+        : places[index].locationIds.map((id) => nameIn(locations, id)).filter(Boolean).join(", ") || null,
+    area_name: places[index].allHotels
+      ? "All areas"
+      : places[index].noHotels
+        ? "No hotels"
+        : places[index].areaIds.map((id) => nameIn(areas, id)).filter(Boolean).join(", ") || null,
   }));
 };

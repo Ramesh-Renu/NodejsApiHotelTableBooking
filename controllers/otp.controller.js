@@ -92,17 +92,19 @@ export const sendOtp = async (req, res) => {
   }
 
   // ✅ DEV MODE STATIC OTP
+  const isDevelopment = process.env.NODE_ENV === "development";
   const otp =
-    process.env.NODE_ENV === "development"
+    isDevelopment
       ? process.env.DEV_STATIC_OTP
       : Math.floor(100000 + Math.random() * 900000);
 
   console.log("OTP for", mobilenumber, ":", otp);
 
-  // ❌ No SMS in dev mode
-  res.json({
+  // ❌ No SMS in dev mode. Never return a production OTP to the browser.
+  const response = {
     success: true,
-    message: "OTP generated (DEV MODE)",
-    otp, // ⚠️ remove in production
-  });
+    message: isDevelopment ? "OTP generated (DEV MODE)" : "OTP generated",
+  };
+  if (isDevelopment) response.otp = otp;
+  res.json(response);
 };
