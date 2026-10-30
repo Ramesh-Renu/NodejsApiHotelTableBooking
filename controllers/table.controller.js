@@ -172,6 +172,10 @@ export const getTablesByHotel = async (req, res) => {
       for (const t of seatStatus) {
         if (Array.isArray(t.seat_ids)) {
           for (const seatId of t.seat_ids) {
+            // A waiting list entry never takes over a seat's real booking.
+            if (r.dining_status === RESERVATION_STATUS.WAITING && seatUserMap.has(Number(seatId))) {
+              continue;
+            }
             seatUserMap.set(Number(seatId), r.user_id);
           }
         }

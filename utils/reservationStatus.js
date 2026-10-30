@@ -7,6 +7,10 @@ export const RESERVATION_STATUS = Object.freeze({
   CANCELLED: 4,
   CLEANING: 6,
   SERVING: 7,
+  // Staff queue a guest for seats, usually ones already booked and about to
+  // end. Open like any other booking, so the seats show as booked
+  // (utils/slotAvailability.js); confirmed once the current booking has ended.
+  WAITING: 8,
 });
 
 /**

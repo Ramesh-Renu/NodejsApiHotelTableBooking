@@ -190,7 +190,22 @@ export const createReservation = async (req, res) => {
       dining_date,
       reservation_time,
       guest_count,
+      waiting_list,
     } = req.body;
+
+    /* ---------------- WAITING LIST ---------------- */
+    // Only staff put a guest on the waiting list.
+    const onWaitingList = waiting_list === true;
+    if (onWaitingList && !isStaffRole(req.user?.role)) {
+      await transaction.rollback();
+      return res.status(403).json({
+        success: false,
+        message: "Only staff can add guests to the waiting list.",
+      });
+    }
+    const initialStatus = onWaitingList
+      ? RESERVATION_STATUS.WAITING
+      : RESERVATION_STATUS.CONFIRMED;
 
     /* ---------------- BASIC VALIDATION ---------------- */
     if (
@@ -284,7 +299,12 @@ export const createReservation = async (req, res) => {
           lock: transaction.LOCK.UPDATE,
         })
       : [];
-    if (seatIds.some((id) => held.has(Number(id))) || liveBlocked.length > 0) {
+    // The waiting list queues for seats that are taken, so only bookings are
+    // refused here.
+    if (
+      !onWaitingList &&
+      (seatIds.some((id) => held.has(Number(id))) || liveBlocked.length > 0)
+    ) {
       await transaction.rollback();
       return res.status(409).json({
         success: false,
@@ -305,8 +325,8 @@ export const createReservation = async (req, res) => {
         // Who the table is for (staff may book for a phone / walk-in guest).
         customer_name: String(customer_name ?? "").trim().slice(0, 100) || null,
         customer_mobile: String(customer_mobile ?? "").replace(/\D/g, "").slice(0, 15) || null,
-        dining_status: RESERVATION_STATUS.CONFIRMED, // <-- default value
-        status_history: withStageEntry(null, RESERVATION_STATUS.CONFIRMED),
+        dining_status: initialStatus,
+        status_history: withStageEntry(null, initialStatus),
         dining_date: slotStart,
       },
       { transaction },
@@ -339,7 +359,9 @@ export const createReservation = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Reservation created and seats booked successfully",
+      message: onWaitingList
+        ? "Guest added to the waiting list"
+        : "Reservation created and seats booked successfully",
       data: {
         reservation_id: reservationId,
       },
@@ -661,6 +683,7 @@ export const getDashboardSummary = async (req, res) => {
           completed: countStatus(RESERVATION_STATUS.COMPLETED),
           cancelled: countStatus(RESERVATION_STATUS.CANCELLED),
           pending: countStatus(RESERVATION_STATUS.PENDING),
+          waiting: countStatus(RESERVATION_STATUS.WAITING),
         },
         trend: {
           aggregation,
@@ -869,6 +892,38 @@ export const updateDiningStatus = async (req, res) => {
       });
     }
 
+    /* ---------------- LEAVING THE WAITING LIST ---------------- */
+    // A waiting guest takes the seats only once the current booking has ended.
+    const leavingWaitingList =
+      Number(reservation.dining_status) === RESERVATION_STATUS.WAITING &&
+      [
+        RESERVATION_STATUS.CONFIRMED,
+        RESERVATION_STATUS.SEATED,
+        RESERVATION_STATUS.SERVING,
+      ].includes(Number(dining_status));
+    const waitingSeatIds = leavingWaitingList
+      ? (reservation.seat_status || []).flatMap((table) => table.seat_ids || []).map(Number)
+      : [];
+    if (leavingWaitingList) {
+      await sequelize.query("SELECT pg_advisory_xact_lock(:key)", {
+        replacements: { key: Number(reservation.hotel_id) },
+        transaction,
+      });
+      const held = await getHeldSeats(reservation.hotel_id, new Date(reservation.dining_date), {
+        excludeReservationId: reservation.id,
+        ignoreWaiting: true,
+        transaction,
+      });
+      const blockedBy = waitingSeatIds.map((id) => held.get(id)).find(Boolean);
+      if (blockedBy) {
+        await transaction.rollback();
+        return res.status(409).json({
+          success: false,
+          message: `These seats are still held by booking #${blockedBy.reservation_id}. Complete or cancel it first.`,
+        });
+      }
+    }
+
     /* ---------------- MAP SEAT STATUS ---------------- */
     const RESERVATION_TO_SEAT_MAP = {
       [RESERVATION_STATUS.PENDING]: SEAT_STATUS.AVAILABLE, // 1 → 4
@@ -878,6 +933,7 @@ export const updateDiningStatus = async (req, res) => {
       [RESERVATION_STATUS.CANCELLED]: SEAT_STATUS.AVAILABLE, // 5 → 4
       [RESERVATION_STATUS.CLEANING]: SEAT_STATUS.CLEANING, // 6 → 3
       [RESERVATION_STATUS.SERVING]: SEAT_STATUS.SEATED, // 7 → 5
+      [RESERVATION_STATUS.WAITING]: SEAT_STATUS.BOOKED, // 8 → 1
     };
     // Seated / Serving only once the booking time has come (30 min grace).
     const EARLY_ARRIVAL_MS = 30 * 60 * 1000;
@@ -971,6 +1027,15 @@ console.log('seatStatusToUpdate',seatStatusToUpdate);
     await reservation.update(reservationUpdate, { transaction });
 
     /* ---------------- UPDATE SEATS ---------------- */
+    // The seats the guest waited for are now theirs (the update below sets
+    // their status through this link).
+    if (leavingWaitingList && slotIsLive(new Date(reservation.dining_date))) {
+      await Seat.update(
+        { reservation_id: reservation.id },
+        { where: { id: waitingSeatIds, status: SEAT_STATUS.AVAILABLE }, transaction },
+      );
+    }
+
     const seatUpdatePayload =
       seatStatusToUpdate === SEAT_STATUS.AVAILABLE
         ? {

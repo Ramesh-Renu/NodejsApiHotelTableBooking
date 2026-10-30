@@ -255,6 +255,7 @@ const REQUIRED_DINING_STATUSES = [
   { status_id: 5, name: "PENDING", color_code: "#F59E0B" },
   { status_id: 6, name: "CLEANING", color_code: "#14B8A6" },
   { status_id: 7, name: "SERVING", color_code: "#8B5CF6" },
+  { status_id: 8, name: "WAITING", color_code: "#D946EF" },
 ];
 
 // prepareStatusMasterTable() fills missing names with "STATUS_<id>". Replace

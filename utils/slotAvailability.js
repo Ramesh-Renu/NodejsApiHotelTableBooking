@@ -50,12 +50,22 @@ export const slotIsLive = (start, now = new Date()) =>
  * Seats held by other open bookings whose window overlaps [start, start+60).
  * Returns Map(seatId → { reservation_id, user_id, ends_at }) — ends_at is
  * when that booking's 60-minute hold ends (the seat is expected free).
+ * Waiting list entries hold seats too, but a seat's real booking wins, so its
+ * guest still sees it as theirs. ignoreWaiting leaves the entries out.
  */
-export const getHeldSeats = async (hotelId, start, { excludeReservationId, transaction } = {}) => {
+export const getHeldSeats = async (
+  hotelId,
+  start,
+  { excludeReservationId, ignoreWaiting = false, transaction } = {},
+) => {
   const end = slotEnd(start);
   const where = {
     hotel_id: hotelId,
-    dining_status: { [Op.notIn]: CLOSED_STATUSES },
+    dining_status: {
+      [Op.notIn]: ignoreWaiting
+        ? [...CLOSED_STATUSES, RESERVATION_STATUS.WAITING]
+        : CLOSED_STATUSES,
+    },
     // Overlap: other.start < end AND other.start + 60min > start
     dining_date: {
       [Op.lt]: end,
@@ -66,18 +76,20 @@ export const getHeldSeats = async (hotelId, start, { excludeReservationId, trans
 
   const reservations = await Reservation.findAll({
     where,
-    attributes: ["id", "user_id", "seat_status", "dining_date"],
+    attributes: ["id", "user_id", "seat_status", "dining_status", "dining_date"],
     transaction,
   });
 
   const held = new Map();
   for (const reservation of reservations) {
+    const isWaiting = reservation.dining_status === RESERVATION_STATUS.WAITING;
     const tables =
       typeof reservation.seat_status === "string"
         ? JSON.parse(reservation.seat_status)
         : reservation.seat_status;
     for (const table of Array.isArray(tables) ? tables : []) {
       for (const seatId of table.seat_ids || []) {
+        if (isWaiting && held.has(Number(seatId))) continue;
         held.set(Number(seatId), {
           reservation_id: reservation.id,
           user_id: reservation.user_id,
